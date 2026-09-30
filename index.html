@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auditonator</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='13' height='13' rx='3' fill='%23222'/%3E%3Crect x='17' y='2' width='13' height='13' rx='3' fill='%23d92d20'/%3E%3Crect x='2' y='17' width='13' height='13' rx='3' fill='%23e0a100'/%3E%3Crect x='17' y='17' width='13' height='13' rx='3' fill='%2316a34a'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo"><i></i><i></i><i></i><i></i></span>Auditonator</div>
+  <div class="ms"><b id="msid"></b><span id="mstitle"></span></div>
+  <div class="files" id="files"></div>
+  <div class="actions">
+    <button class="btn" data-act="load" title="Audit .md, triage .md, PDFs or a saved .json">Load</button>
+    <button class="btn" id="btnSave" data-act="save" title="Save work (⌘/Ctrl+S) · Shift-click: save as">Save</button>
+    <span class="sep"></span>
+    <button class="btn" id="btnCopy" data-act="copy" title="Copy author queries of confirmed findings">Copy queries</button>
+    <button class="btn" id="btnXlsx" data-act="xlsx" title="Export author queries as Excel">Excel</button>
+    <span class="sep"></span>
+    <button class="btn" id="btnPdf" data-act="pdf" title="Toggle PDF (P)">PDF</button>
+  </div>
+  <input type="file" id="fileInput" multiple accept=".md,.markdown,.txt,.pdf,.json" hidden>
+</header>
+<div class="progress" id="progress"></div>
+
+<main id="main" hidden>
+  <section class="board" id="board">
+    <div class="tabs">
+      <button class="on" data-tab="findings">Findings <b id="nFind"></b></button>
+      <button data-tab="queries">Queries <b id="nQ"></b></button>
+      <span class="stat" id="stat"></span>
+    </div>
+    <div id="findingsView" class="view">
+      <div class="filters">
+        <div class="cfs" id="colourFilter"></div>
+        <div class="seg" id="statusFilter">
+          <button data-status="all">All</button><button data-status="open">Open</button><button data-status="confirmed">Confirmed</button><button data-status="dismissed">Dismissed</button>
+        </div>
+        <div class="fdrop" data-dim="entity"><button class="fbtn" data-pop="entity" title="Show findings that involve a figure, table, source-data sheet or section (E)"></button><div class="pop" hidden></div></div>
+        <div class="fdrop" data-dim="type"><button class="fbtn" data-pop="type" title="Show findings of a type (T)"></button><div class="pop" hidden></div></div>
+        <input id="search" type="search" placeholder="Search  /" autocomplete="off">
+      </div>
+      <div class="active" id="activeFilters" hidden></div>
+      <div class="cards" id="cards"></div>
+      <div class="keys"><kbd>↑</kbd><kbd>↓</kbd> move <kbd>↵</kbd> details <kbd>C</kbd> confirm <kbd>X</kbd> dismiss <kbd>E</kbd> entity <kbd>T</kbd> type <kbd>P</kbd> PDF <kbd>Q</kbd> queries</div>
+    </div>
+    <div id="queriesView" class="view" hidden>
+      <div class="qbar"><span id="qCount"></span><span class="grow"></span><button class="btn" data-act="copy">Copy</button><button class="btn" data-act="xlsx">Excel</button></div>
+      <ol class="qlist" id="qList"></ol>
+    </div>
+    <div class="modal" id="modal" hidden><div class="dialog" id="detail" role="dialog" aria-modal="true" aria-label="Finding details"></div></div>
+  </section>
+  <section class="pdf-pane" id="pdfPane" hidden>
+    <div class="pdf-bar">
+      <div class="pdf-tabs" id="pdfTabs"></div>
+      <label id="pdfOffsetWrap" title="Printed page number minus PDF page number">Offset <input id="pdfOffset" type="number" step="1"></label>
+      <button class="x" data-act="closepdf" title="Close PDF (P)">✕</button>
+    </div>
+    <div class="pdf-empty" id="pdfEmpty"><button class="btn" data-act="loadpdf">Load PDF</button></div>
+    <iframe id="pdfFrame" title="PDF" hidden></iframe>
+  </section>
+</main>
+
+<div id="empty" class="empty">
+  <div class="drop-card">
+    <div class="logo big"><i></i><i></i><i></i><i></i></div>
+    <h1>Load an audit</h1>
+    <p>Drop or select <code>…-Audit_v1.md</code>, <code>…-Audit_Critical_v1.md</code> and the manuscript PDFs together, or a saved <code>…-Auditonator.json</code>.</p>
+    <button class="btn primary" data-act="load">Select files</button>
+    <div id="resume"></div>
+  </div>
+</div>
+
+<div class="dropzone">Drop to load</div>
+<div id="toast" class="toast"></div>
+
+<script src="js/md.js"></script>
+<script src="js/parse.js"></script>
+<script src="js/facets.js"></script>
+<script src="js/xlsx.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
