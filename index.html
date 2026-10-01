@@ -13,15 +13,15 @@
   <div class="ms"><b id="msid"></b><span id="mstitle"></span></div>
   <div class="files" id="files"></div>
   <div class="actions">
-    <button class="btn" data-act="load" title="Audit .md, triage .md, PDFs or a saved .json">Load</button>
+    <button class="btn" data-act="load" title="Audit .md, triage .md, PDFs, spreadsheets or a saved .json">Load</button>
     <button class="btn" id="btnSave" data-act="save" title="Save work (⌘/Ctrl+S) · Shift-click: save as">Save</button>
     <span class="sep"></span>
     <button class="btn" id="btnCopy" data-act="copy" title="Copy author queries of confirmed findings">Copy queries</button>
     <button class="btn" id="btnXlsx" data-act="xlsx" title="Export author queries as Excel">Excel</button>
     <span class="sep"></span>
-    <button class="btn" id="btnPdf" data-act="pdf" title="Toggle PDF (P)">PDF</button>
+    <button class="btn" id="btnPdf" data-act="pdf" title="Toggle the PDF and spreadsheet viewer (P)">PDF</button>
   </div>
-  <input type="file" id="fileInput" multiple accept=".md,.markdown,.txt,.pdf,.json" hidden>
+  <input type="file" id="fileInput" multiple accept=".md,.markdown,.txt,.pdf,.json,.xlsx,.xlsm,.xls,.ods,.csv,.tsv" hidden>
 </header>
 <div class="progress" id="progress"></div>
 
@@ -56,10 +56,15 @@
     <div class="pdf-bar">
       <div class="pdf-tabs" id="pdfTabs"></div>
       <label id="pdfOffsetWrap" title="Printed page number minus PDF page number">Offset <input id="pdfOffset" type="number" step="1"></label>
-      <button class="x" data-act="closepdf" title="Close PDF (P)">✕</button>
+      <button class="x" data-act="closepdf" title="Close viewer (P)">✕</button>
     </div>
-    <div class="pdf-empty" id="pdfEmpty"><button class="btn" data-act="loadpdf">Load PDF</button></div>
+    <div class="pdf-empty" id="pdfEmpty"><button class="btn" data-act="loadpdf">Load PDF or spreadsheet</button></div>
     <iframe id="pdfFrame" title="PDF" hidden></iframe>
+    <div class="sheet" id="sheetView" hidden>
+      <div class="sh-bar"><span class="sh-cell" id="shCell"></span><input id="shFind" type="search" placeholder="Find in sheet  ↵" autocomplete="off"><span class="sh-n" id="shFindN"></span></div>
+      <div class="sh-grid" id="shGrid"></div>
+      <div class="sh-foot"><div class="sh-tabs" id="shTabs"></div><span class="sh-note" id="shNote"></span></div>
+    </div>
   </section>
 </main>
 
@@ -67,7 +72,7 @@
   <div class="drop-card">
     <div class="logo big"><i></i><i></i><i></i><i></i></div>
     <h1>Load an audit</h1>
-    <p>Drop or select <code>…-Audit_v1.md</code>, <code>…-Audit_Critical_v1.md</code> and the manuscript PDFs together, or a saved <code>…-Auditonator.json</code>.</p>
+    <p>Drop or select <code>…-Audit_v1.md</code>, <code>…-Audit_Critical_v1.md</code> the manuscript PDFs and source-data spreadsheets together, or a saved <code>…-Auditonator.json</code>.</p>
     <button class="btn primary" data-act="load">Select files</button>
     <div id="resume"></div>
   </div>
@@ -80,6 +85,8 @@
 <script src="js/parse.js"></script>
 <script src="js/facets.js"></script>
 <script src="js/xlsx.js"></script>
+<script src="js/sheet.js"></script>
+<script src="js/grid.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

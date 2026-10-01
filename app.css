@@ -344,3 +344,33 @@ body.dragging .dropzone { display: grid; }
   .d-scroll { padding: 14px 16px 40px; }
   .keys { display: none; }
 }
+
+/* spreadsheet */
+.pdf-tabs button.sh { border-left: 3px solid var(--green); }
+.sheet { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--panel); }
+.sh-bar { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.sh-cell { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.sh-cell b { color: var(--muted); font-weight: 600; margin-right: 10px; }
+#shFind { width: 170px; height: 24px; border: 1px solid var(--line); border-radius: 5px; padding: 0 6px; background: var(--panel); }
+#shFind:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.sh-n { min-width: 56px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sh-grid { flex: 1; min-height: 0; overflow: auto; font-size: 12px; font-variant-numeric: tabular-nums; }
+.sh-grid table { table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.sh-grid td, .sh-grid th { height: 22px; padding: 0 6px; line-height: 21px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sh-grid th { background: var(--sunk); color: var(--muted); font-weight: 500; font-size: 11px; }
+.sh-grid thead th { position: sticky; top: 0; z-index: 2; text-align: center; }
+.sh-grid tbody th { position: sticky; left: 0; z-index: 1; text-align: right; }
+.sh-grid th.cr { left: 0; z-index: 3; }
+.sh-grid .gap { padding: 0; border: 0; background: none; }
+.sh-grid tr.gap td { border: 0; padding: 0; }
+.sh-grid td.n { text-align: right; }
+.sh-grid td.mk { background: var(--yellow-soft); }
+.sh-grid th.mk { background: var(--yellow-soft); color: var(--ink); font-weight: 600; }
+.sh-grid td.hit { background: var(--accent-soft); }
+.sh-grid td.sel { box-shadow: inset 0 0 0 2px var(--accent); }
+.sh-foot { display: flex; align-items: center; gap: 10px; padding: 3px 6px; border-top: 1px solid var(--line); background: var(--sunk); }
+.sh-tabs { display: flex; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; }
+.sh-tabs button { height: 22px; max-width: 170px; padding: 0 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.sh-tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.sh-tabs button.hid { font-style: italic; color: var(--muted); }
+.sh-note { font-size: 11px; color: var(--muted); white-space: nowrap; }

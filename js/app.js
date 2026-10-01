@@ -14,7 +14,10 @@
   const CE = (() => { try { const d = document.createElement('div'); d.contentEditable = 'plaintext-only'; return d.contentEditable === 'plaintext-only' ? 'plaintext-only' : 'true'; } catch (e) { return 'true'; } })();
 
   let src = { audit: '', auditName: '', critical: '', criticalName: '' };
-  let st = null, model = null, pdfs = [], pdfIdx = 0, dirty = false, fileHandle = null, autosaveT = 0;
+  // pdfs: everything the viewer pane shows, PDFs first, then spreadsheets ({ kind: 'sheet' })
+  let st = null, model = null, pdfs = [], pdfIdx = 0, dirty = false, fileHandle = null, autosaveT = 0, docSeq = 0;
+  const SHEET_EXT = /\.(xlsx|xlsm|xls|ods|csv|tsv)$/i;
+  const VIEW_ACCEPT = '.pdf,.xlsx,.xlsm,.xls,.ods,.csv,.tsv';
   const ui = { tab: 'findings', sel: null, colours: new Set(), status: 'all', q: '', ents: new Set(), entMode: 'any', types: new Set(), pop: null, open: false, pdf: false, claimOpen: false };
 
   const plain = s => s.replace(/<[^>]+>/g, '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/(^|[^*\w])\*(?!\s)(.+?)\*(?!\w)/g, '$1$2').replace(/`([^`]+)`/g, '$1');
@@ -92,14 +95,14 @@
     if (!s || s.app !== 'auditonator') return toast('Not an Auditonator save file');
     src = { audit: s.audit.text || '', auditName: s.audit.name || '', critical: s.critical.text || '', criticalName: s.critical.name || '' };
     st = s.state;
-    pdfs.forEach(p => URL.revokeObjectURL(p.url));
+    pdfs.forEach(p => p.url && URL.revokeObjectURL(p.url));
     pdfs = []; fileHandle = null;
     const want = (s.pdfs || []).map(p => p.name);
     restore.offsets = Object.fromEntries((s.pdfs || []).map(p => [p.name, p.offset || 0]));
     ui.sel = s.ui && s.ui.sel;
     build(); render();
     dirty = false;
-    toast(want.length ? `Restored ${model.msid}. Load PDF: ${want.join(', ')}` : `Restored ${model.msid}`);
+    toast(want.length ? `Restored ${model.msid}. Load again: ${want.join(', ')}` : `Restored ${model.msid}`);
   }
 
   // ---------- loading ----------
@@ -107,10 +110,10 @@
 
   async function loadFiles(list) {
     const files = [...list];
-    const md = [], saves = [], pdfFiles = [];
+    const md = [], saves = [], docFiles = [];
     for (const f of files) {
       if (/\.json$/i.test(f.name)) saves.push(f);
-      else if (/\.pdf$/i.test(f.name)) pdfFiles.push(f);
+      else if (/\.pdf$/i.test(f.name) || SHEET_EXT.test(f.name)) docFiles.push(f);
       else if (/\.(md|markdown|txt)$/i.test(f.name)) md.push({ name: f.name, text: await f.text() });
       else toast(`Skipped ${f.name}`);
     }
@@ -118,8 +121,8 @@
       if (dirty && !confirm(`Discard unsaved changes on ${model.msid}?`)) return;
       try { restore(JSON.parse(await f.text())); } catch (e) { toast(`Could not read ${f.name}`); }
     }
-    const added = pdfFiles.map(addPdf);
-    if (added.length) pdfIdx = pdfs.indexOf(added.find(p => p.role === 'main') || added[0]);
+    const added = docFiles.map(addDoc);
+    if (added.length) pdfIdx = pdfs.indexOf(added.find(p => p.kind === 'pdf' && p.role === 'main') || added.find(p => p.kind === 'pdf') || added[0]);
     const isCrit = m => /critical/i.test(m.name) || /^#\s*Critical triage/m.test(m.text);
     for (const m of md.sort((a, b) => isCrit(a) - isCrit(b))) {
       if (isCrit(m)) { src.critical = m.text; src.criticalName = m.name; }
@@ -142,7 +145,7 @@
     if (progress && !confirm(`Replace the current work on ${model.msid} with ${A.msid || m.name}?`)) return false;
     if (st && st.msid && st.msid !== A.msid) {
       src.critical = ''; src.criticalName = ''; fileHandle = null;
-      pdfs = pdfs.filter(p => !p.name.includes(st.msid) || (URL.revokeObjectURL(p.url), false));
+      pdfs = pdfs.filter(p => !p.name.includes(st.msid) || (p.url && URL.revokeObjectURL(p.url), false));
       pdfIdx = 0;
     }
     src.audit = m.text; src.auditName = m.name;
@@ -150,11 +153,15 @@
     return true;
   }
 
-  function addPdf(file) {
+  function addDoc(file) {
     const i = pdfs.findIndex(p => p.name === file.name);
-    const p = { name: file.name, url: URL.createObjectURL(file), role: roleOf(file.name), offset: (restore.offsets || {})[file.name] || 0 };
-    if (i >= 0) { URL.revokeObjectURL(pdfs[i].url); pdfs[i] = p; } else pdfs.push(p);
-    pdfs.sort((a, b) => ['main', 'si', 'other'].indexOf(a.role) - ['main', 'si', 'other'].indexOf(b.role));
+    const p = SHEET_EXT.test(file.name)
+      ? { id: ++docSeq, name: file.name, kind: 'sheet', sheet: 0, book: Sheet.open(file) }
+      : { id: ++docSeq, name: file.name, kind: 'pdf', url: URL.createObjectURL(file), role: roleOf(file.name), offset: (restore.offsets || {})[file.name] || 0 };
+    if (p.book) p.book.then(b => { p.sheets = b.sheets; if (ui.open) renderDetail(); }, () => { });
+    if (i >= 0) { if (pdfs[i].url) URL.revokeObjectURL(pdfs[i].url); pdfs[i] = p; } else pdfs.push(p);
+    const rank = x => x.kind === 'pdf' ? ['main', 'si', 'other'].indexOf(x.role) : 3;
+    pdfs.sort((a, b) => rank(a) - rank(b) || (a.kind === 'sheet' ? a.name.localeCompare(b.name, undefined, { numeric: true }) : 0));
     ui.pdf = true;
     return p;
   }
@@ -279,12 +286,20 @@
 
   function gotoPage(role, n) {
     ui.pdf = true;
-    if (pdfs.length) {
-      const i = pdfs.findIndex(p => p.role === role);
-      pdfIdx = i >= 0 ? i : role === 'si' ? pdfIdx : Math.max(0, pdfs.findIndex(p => p.role === 'main'));
-      pdfs[pdfIdx].page = Math.max(1, n - (pdfs[pdfIdx].offset || 0));
-    }
+    const docs = pdfs.filter(p => p.kind === 'pdf'), cur = pdfs[pdfIdx];
+    const p = docs.find(x => x.role === role) || (role === 'si' && cur && cur.kind === 'pdf' && cur) || docs.find(x => x.role === 'main') || docs[0];
+    if (p) { pdfIdx = pdfs.indexOf(p); p.page = Math.max(1, n - (p.offset || 0)); }
+    renderHeader();
     renderPdf(true);
+  }
+
+  function gotoSheet(a) {
+    const p = pdfs.find(x => x.id === +a.dataset.doc);
+    if (!p || !p.sheets) return;
+    p.sheet = Math.max(0, p.sheets.findIndex(s => s.name.trim() === a.dataset.sheet));
+    pdfIdx = pdfs.indexOf(p); ui.pdf = true;
+    renderHeader();
+    renderPdf(false, JSON.parse(a.dataset.target));
   }
 
   // ---------- rendering ----------
@@ -308,7 +323,10 @@
     $('#msid').textContent = model ? model.msid : '';
     $('#mstitle').innerHTML = model ? inline(model.title) : '';
     const chip = (ok, label, name) => `<span class="fchip ${ok ? 'ok' : ''}" title="${esc(name || 'not loaded')}">${label}</span>`;
-    $('#files').innerHTML = model ? chip(src.audit, 'Audit', src.auditName) + chip(src.critical, 'Triage', src.criticalName) + chip(pdfs.length, pdfs.length > 1 ? `PDF ×${pdfs.length}` : 'PDF', pdfs.map(p => p.name).join(', ')) : '';
+    const pdfOnly = pdfs.filter(p => p.kind === 'pdf'), sheets = pdfs.filter(p => p.kind === 'sheet');
+    $('#files').innerHTML = model ? chip(src.audit, 'Audit', src.auditName) + chip(src.critical, 'Triage', src.criticalName)
+      + chip(pdfOnly.length, pdfOnly.length > 1 ? `PDF ×${pdfOnly.length}` : 'PDF', pdfOnly.map(p => p.name).join(', '))
+      + (sheets.length ? chip(1, sheets.length > 1 ? `Sheets ×${sheets.length}` : 'Sheet', sheets.map(p => p.name).join(', ')) : '') : '';
     $('#btnPdf').classList.toggle('on', ui.pdf);
     $('#main').classList.toggle('with-pdf', ui.pdf);
     ['#btnSave', '#btnCopy', '#btnXlsx', '#btnPdf'].forEach(s => $(s).disabled = !model || !model.map.size);
@@ -488,6 +506,7 @@
         <section class="d-note"><h4>Note</h4><textarea data-act="note" rows="3" placeholder="Private note — saved with the work, not exported">${esc(note)}</textarea></section>
       </div>`;
     el.querySelectorAll('.d-loc, .d-body, .d-tri').forEach(linkPages);
+    el.querySelectorAll('.d-loc, .d-body, .d-tri').forEach(linkSheets);
     el.querySelector('.d-scroll').scrollTop = keep;
   }
 
@@ -515,6 +534,48 @@
     });
   }
 
+  // a sheet name of a loaded workbook, in backticks or quoted after "sheet" (sheet 'Fig. 3'), becomes a link;
+  // "rows 21–29" / "columns AB and AN" after it mark those cells
+  const ROWS_RE = /\brows?\s+(\d+(?:\s*(?:–|-|to)\s*\d+)?(?:\s*(?:,|and|&)\s*\d+(?:\s*(?:–|-|to)\s*\d+)?)*)/;
+  const COLS_RE = /\bcol(?:umn)?s?\s+([A-Z]{1,3}(?:\s*(?:–|-)\s*[A-Z]{1,3})?(?:\s*(?:,|and|&)\s*[A-Z]{1,3}(?:\s*(?:–|-)\s*[A-Z]{1,3})?)*)\b/;
+  const ranges = (re, s) => { const m = s.match(re); return m ? m[1].split(/\s*(?:,|and|&)\s*/).map(x => x.split(/\s*(?:–|-|to)\s*/)) : []; };
+  const stem = name => name.replace(/\.\w+$/, '').replace(/^.*?-(?=[A-Z])/, '').replace(/_v\d+$/, '').replace(/[_\s]+/g, ' ').toLowerCase();
+  function linkSheets(root) {
+    const books = pdfs.filter(p => p.sheets && p.sheets.length);
+    if (!books.length) return;
+    const text = root.textContent.replace(/[_\s]+/g, ' ').toLowerCase();
+    const has = name => books.some(p => p.sheets.some(s => s.name.trim() === name));
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), nodes = [];
+    while (w.nextNode()) if (/sheet/i.test(w.currentNode.nodeValue) && !w.currentNode.parentNode.closest('code, a')) nodes.push(w.currentNode);
+    nodes.forEach(n => {
+      const v = n.nodeValue, frag = document.createDocumentFragment();
+      let last = 0;
+      for (const m of v.matchAll(/['‘"“]([^'’"”\n]{1,40})['’"”]/g)) {
+        if (!has(m[1].trim()) || !/\bsheets?\b/i.test(v.slice(Math.max(0, m.index - 80), m.index))) continue;
+        const q = document.createElement('span');
+        q.textContent = m[0]; q.dataset.sheet = m[1].trim();
+        frag.append(v.slice(last, m.index), q);
+        last = m.index + m[0].length;
+      }
+      if (last) { frag.append(v.slice(last)); n.replaceWith(frag); }
+    });
+    root.querySelectorAll('code, span[data-sheet]').forEach(code => {
+      const name = code.dataset.sheet || code.textContent.trim();
+      const hits = books.filter(p => p.sheets.some(s => s.name.trim() === name));
+      if (!hits.length) return;
+      const named = h => new RegExp('\\b' + stem(h.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b').test(text);
+      const p = hits.find(named) || hits[0];
+      const r = document.createRange();
+      r.setStartAfter(code); r.setEnd(root, root.childNodes.length);
+      const after = r.toString().slice(0, 160).split(/\bsheets?\b/i)[0];
+      const a = document.createElement('a');
+      a.className = 'pg'; a.title = `Show in ${p.name}`;
+      a.dataset.doc = p.id; a.dataset.sheet = name;
+      a.dataset.target = JSON.stringify({ rows: ranges(ROWS_RE, after).map(x => x.map(Number)), cols: ranges(COLS_RE, after) });
+      code.replaceWith(a); a.append(code);
+    });
+  }
+
   function renderQueries() {
     const items = exportItems();
     const nf = new Set(items.flatMap(o => o.items.map(q => q.finding))).size;
@@ -526,26 +587,76 @@
       : '<p class="muted">Confirm findings to build the query list.</p>';
   }
 
-  function renderPdf(reload) {
+  function renderPdf(reload, target) {
     const pane = $('#pdfPane');
     pane.hidden = !ui.pdf;
     if (!ui.pdf) return;
     const p = pdfs[pdfIdx];
-    $('#pdfTabs').innerHTML = pdfs.map((x, i) => `<button class="${i === pdfIdx ? 'on' : ''}" data-pdf="${i}" title="${esc(x.name)}">${esc(x.name.replace(/\.pdf$/i, '').replace(/^.*?-(?=[A-Z])/, ''))}</button>`).join('')
-      + '<button data-act="loadpdf" title="Load PDF">+</button>';
+    $('#pdfTabs').innerHTML = pdfs.map((x, i) => `<button class="${i === pdfIdx ? 'on' : ''} ${x.kind === 'sheet' ? 'sh' : ''}" data-pdf="${i}" title="${esc(x.name)}">${esc(x.name.replace(/\.\w+$/, '').replace(/^.*?-(?=[A-Z])/, ''))}</button>`).join('')
+      + '<button data-act="loadpdf" title="Load PDF or spreadsheet">+</button>';
     $('#pdfOffset').value = p ? p.offset || 0 : 0;
-    $('#pdfOffsetWrap').hidden = !p;
-    // navpanes=0 (Chrome, Acrobat) and pagemode=none (Firefox) keep the thumbnail sidebar closed
-    const frame = $('#pdfFrame'), want = p ? `${p.url}#page=${p.page || 1}&navpanes=0&pagemode=none&view=FitH` : '';
+    $('#pdfOffsetWrap').hidden = !p || p.kind !== 'pdf';
+    $('#sheetView').hidden = !p || p.kind !== 'sheet';
+    const frame = $('#pdfFrame');
     if (!p) { frame.hidden = true; $('#pdfEmpty').hidden = false; return; }
     $('#pdfEmpty').hidden = true;
-    frame.hidden = false;
+    frame.hidden = p.kind !== 'pdf';
+    if (p.kind === 'sheet') return showSheet(p, target);
+    // navpanes=0 (Chrome, Acrobat) and pagemode=none (Firefox) keep the thumbnail sidebar closed
+    const want = `${p.url}#page=${p.page || 1}&navpanes=0&pagemode=none&view=FitH`;
     if (reload || frame.dataset.src !== want) {
       const nf = frame.cloneNode(false);
       nf.src = want; nf.dataset.src = want;
       nf.addEventListener('load', () => setTimeout(() => { if (document.activeElement === nf) nf.blur(); }, 150));
       frame.replaceWith(nf);
     }
+  }
+
+  // ---------- spreadsheets ----------
+  // parsed sheets are kept for the last few viewed; reading one sheet aborts an unfinished read of another
+  const sheetCache = new Map();
+  let grid = null, shownSheet = null, reading = null;
+
+  async function showSheet(p, target) {
+    const note = t => { $('#shNote').textContent = t; };
+    grid = grid || Grid.create($('#shGrid'), (addr, v) => { $('#shCell').innerHTML = addr ? `<b>${addr}</b>${esc(v)}` : ''; });
+    let book;
+    try { book = await p.book; } catch (e) {
+      shownSheet = null; $('#shTabs').innerHTML = ''; grid.clear();
+      return note(`Could not open ${p.name}: ${e.message}`);
+    }
+    if (pdfs[pdfIdx] !== p) return;
+    const si = Math.min(p.sheet || 0, book.sheets.length - 1);
+    $('#shTabs').innerHTML = book.sheets.map((s, i) => `<button class="${i === si ? 'on' : ''} ${s.hidden ? 'hid' : ''}" data-sheet-i="${i}" title="${esc(s.name)}${s.hidden ? ' (hidden in the workbook)' : ''}">${esc(s.name)}</button>`).join('');
+    if (si < 0) { grid.clear(); return note('No worksheets in this file'); }
+    const key = `${p.id}:${si}`;
+    if (shownSheet === key) { if (target) grid.highlight(target); return; }
+    if (reading && reading.key !== key) { reading.signal.aborted = true; sheetCache.delete(reading.key); }
+    let job = sheetCache.get(key);
+    if (!job) {
+      const signal = { aborted: false };
+      job = { key, signal, data: book.read(si, { signal, progress: n => { if (shownSheet === key) note(`Reading… ${n.toLocaleString()} rows`); } }) };
+    }
+    sheetCache.delete(key); sheetCache.set(key, job);
+    for (const k of sheetCache.keys()) if (sheetCache.size > 4 && k !== key) sheetCache.delete(k);
+    reading = job; shownSheet = key;
+    grid.clear(); note('Reading…'); $('#shFindN').textContent = '';
+    let d;
+    try { d = await job.data; } catch (e) {
+      sheetCache.delete(key);
+      if (shownSheet === key) { shownSheet = null; if (e.name !== 'AbortError') note(`Could not read this sheet: ${e.message}`); }
+      return;
+    } finally { if (reading === job) reading = null; }
+    if (shownSheet !== key) return;
+    grid.show(d);
+    const nr = d.rows.length.toLocaleString();
+    note(d.truncated ? `First ${nr} of ${d.total > d.rows.length ? d.total.toLocaleString() : 'more'} rows: too large to show whole` : `${nr} rows × ${d.ncols} columns`);
+    if (target) grid.highlight(target);
+  }
+
+  function findInSheet(back) {
+    const r = grid && grid.find($('#shFind').value, back);
+    $('#shFindN').textContent = r ? r.n ? `${r.i} of ${r.n.toLocaleString()}` : 'none' : '';
   }
 
   // ---------- events ----------
@@ -556,14 +667,14 @@
     if (e.target.closest('.chk') && e.target.tagName !== 'INPUT') return;
     if (ui.pop && !e.target.closest('.fdrop')) closePop();
     if (e.target.id === 'modal') return closeDetail();
-    const t = e.target.closest('[data-act],[data-colour],[data-status],[data-tab],[data-goto],[data-pdf],[data-pop],[data-ent],[data-type],[data-entmode],a.pg,.card');
+    const t = e.target.closest('[data-act],[data-colour],[data-status],[data-tab],[data-goto],[data-pdf],[data-sheet-i],[data-pop],[data-ent],[data-type],[data-entmode],a.pg,.card');
     if (!t) return;
     const act = t.dataset.act;
     const card = t.closest('.card');
     const qEl = t.closest('.q');
     const q = qEl && st.queries.find(x => x.id === qEl.dataset.q);
     if (act === 'load') return fileInput.click();
-    if (act === 'loadpdf') { fileInput.accept = '.pdf'; fileInput.click(); fileInput.accept = '.md,.markdown,.txt,.pdf,.json'; return; }
+    if (act === 'loadpdf') { const all = fileInput.accept; fileInput.accept = VIEW_ACCEPT; fileInput.click(); fileInput.accept = all; return; }
     if (act === 'resume') { try { restore(JSON.parse(localStorage.getItem(KEY))); } catch (err) { toast('Autosave unreadable'); } return; }
     if (act === 'save') return save(e.shiftKey);
     if (act === 'copy') return copyQueries();
@@ -571,8 +682,9 @@
     if (act === 'pdf') { ui.pdf = !ui.pdf; renderHeader(); return renderPdf(); }
     if (act === 'closepdf') { ui.pdf = false; renderHeader(); return renderPdf(); }
     if (!model) return;
-    if (t.matches('a.pg')) { e.preventDefault(); return gotoPage(t.dataset.role, +t.dataset.page); }
+    if (t.matches('a.pg')) { e.preventDefault(); return t.dataset.doc ? gotoSheet(t) : gotoPage(t.dataset.role, +t.dataset.page); }
     if (t.dataset.pdf) { pdfIdx = +t.dataset.pdf; return renderPdf(); }
+    if (t.dataset.sheetI) { pdfs[pdfIdx].sheet = +t.dataset.sheetI; return renderPdf(); }
     if (t.dataset.pop) return openPop(t.dataset.pop);
     if (t.dataset.ent) { toggle(ui.ents, t.dataset.ent); renderCards(); return renderDetail(); }
     if (t.dataset.type) { toggle(ui.types, t.dataset.type); renderCards(); return renderDetail(); }
@@ -625,6 +737,7 @@
   document.addEventListener('input', e => {
     const t = e.target;
     if (t.id === 'search') { ui.q = t.value; return renderCards(); }
+    if (t.id === 'shFind') { $('#shFindN').textContent = ''; return; }
     if (t.dataset.act === 'note') { fstate(ui.sel).note = t.value; return changed(); }
     if (t.dataset.act === 'qtext') {
       const q = st.queries.find(x => x.id === t.closest('.q').dataset.q);
@@ -636,6 +749,7 @@
 
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); return save(e.shiftKey); }
+    if (e.target.id === 'shFind' && e.key === 'Enter') { e.preventDefault(); return findInSheet(e.shiftKey); }
     if (e.target.closest('input, textarea, select, [contenteditable]') || e.metaKey || e.ctrlKey || e.altKey || !model || !model.map.size) {
       if (e.key === 'Escape') e.target.blur();
       return;
