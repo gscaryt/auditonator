@@ -17,7 +17,7 @@
     <button class="btn" id="btnSave" data-act="save" title="Save work (⌘/Ctrl+S) · Shift-click: save as">Save</button>
     <span class="sep"></span>
     <button class="btn" id="btnCopy" data-act="copy" title="Copy author queries of confirmed findings">Copy queries</button>
-    <button class="btn" id="btnXlsx" data-act="xlsx" title="Export author queries as Excel">Excel</button>
+    <button class="btn" id="btnXlsx" data-act="xlsx" title="Excel: author queries (tab 1) and internal notes (tab 2)">Excel</button>
     <span class="sep"></span>
     <button class="btn" id="btnPdf" data-act="pdf" title="Toggle the PDF and spreadsheet viewer (P)">PDF</button>
   </div>
@@ -44,10 +44,10 @@
       </div>
       <div class="active" id="activeFilters" hidden></div>
       <div class="cards" id="cards"></div>
-      <div class="keys"><kbd>↑</kbd><kbd>↓</kbd> move <kbd>↵</kbd> details <kbd>C</kbd> confirm <kbd>X</kbd> dismiss <kbd>E</kbd> entity <kbd>T</kbd> type <kbd>P</kbd> PDF <kbd>Q</kbd> queries</div>
+      <div class="keys"><kbd>↑</kbd><kbd>↓</kbd> move <kbd>↵</kbd> details <kbd>C</kbd> confirm <kbd>X</kbd> dismiss <kbd>1</kbd>–<kbd>4</kbd> severity <kbd>E</kbd> entity <kbd>T</kbd> type <kbd>P</kbd> PDF <kbd>Q</kbd> queries</div>
     </div>
     <div id="queriesView" class="view" hidden>
-      <div class="qbar"><span id="qCount"></span><span class="grow"></span><button class="btn" data-act="copy">Copy</button><button class="btn" data-act="xlsx">Excel</button></div>
+      <div class="qbar"><span id="qCount"></span><span class="grow"></span><button class="btn" data-act="copy">Copy</button><button class="btn" data-act="xlsx" title="Excel: author queries (tab 1) and internal notes (tab 2)">Excel</button></div>
       <ol class="qlist" id="qList"></ol>
     </div>
     <div class="modal" id="modal" hidden><div class="dialog" id="detail" role="dialog" aria-modal="true" aria-label="Finding details"></div></div>

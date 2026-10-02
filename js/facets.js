@@ -109,7 +109,12 @@ const Facets = (() => {
     return best;
   }
 
-  return { entities, type, label, group, sortKey, GROUPS, TYPES: TYPES.map(t => t[0]).concat('other'), TYPE_LABEL };
+  // an "Issue type:" label from the audit -> type id; null if it is not one of ours
+  const squash = s => s.toLowerCase().replace(/\s*(?:&|\band\b)\s*/g, '&').replace(/[^a-z&]/g, '').replace(/ies$/, 'y').replace(/s$/, '');
+  const BY_LABEL = Object.fromEntries(TYPES.map(t => [squash(t[1]), t[0]]));
+  const typeOf = label => BY_LABEL[squash(label)] || null;
+
+  return { entities, type, typeOf, label, group, sortKey, GROUPS, TYPES: TYPES.map(t => t[0]).concat('other'), TYPE_LABEL };
 })();
 
 if (typeof module !== 'undefined') module.exports = Facets;

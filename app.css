@@ -200,6 +200,7 @@ main.with-pdf { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.15fr); }
 .c-yellow .fid { filter: brightness(.85); }
 .tag { font-size: 10.5px; font-weight: 600; padding: 0 6px; border-radius: 8px; background: var(--sunk); color: var(--muted); line-height: 17px; white-space: nowrap; }
 .tag.note { background: var(--accent-soft); color: var(--accent); }
+.tag.sev { background: var(--cs); color: var(--ink); box-shadow: inset 0 0 0 1px var(--c); }
 .qn { margin-left: auto; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .card h3 { margin: 0; font-size: 13.5px; font-weight: 600; line-height: 1.38; }
 .card p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
@@ -237,6 +238,12 @@ details.checked { margin-top: 14px; }
 .d-bar .close:hover { color: var(--ink); border-color: var(--muted); }
 .pill { background: var(--c); color: #fff; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 2px 8px; border-radius: 5px; }
 .c-yellow .pill { color: #2b2100; }
+select.pill { appearance: none; -webkit-appearance: none; border: 0; cursor: pointer; padding-right: 20px; background: var(--c) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23fff' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 6px center / 8px; }
+.c-yellow select.pill { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%232b2100' stroke-width='1.6'/%3E%3C/svg%3E"); }
+.c-black select.pill { box-shadow: inset 0 0 0 1px var(--line-2); }
+select.pill option { background: var(--panel); color: var(--ink); text-transform: none; font-weight: 400; }
+.d-bar .rev { height: 22px; padding: 0 7px; font-size: 11px; font-weight: 600; color: var(--muted); }
+.d-bar .rev:hover { color: var(--ink); border-color: var(--muted); }
 .d-bar .fid { font-size: 15px; }
 .d-bar .sec { color: var(--muted); font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 .d-bar button { height: 28px; border-radius: 6px; border: 1px solid var(--line-2); background: var(--panel); padding: 0 12px; font-weight: 600; white-space: nowrap; }
@@ -285,6 +292,7 @@ a.pg:hover { text-decoration-style: solid; }
 .qt:empty::before { content: "Type the query…"; color: var(--muted); }
 .qa { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
 .qa select { max-width: 260px; height: 24px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); font-size: 11.5px; color: var(--muted); }
+.qno { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .qa button, .add { height: 24px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); font-size: 11.5px; padding: 0 8px; color: var(--muted); }
 .qa button:hover, .add:hover { color: var(--accent); border-color: var(--accent); }
 .add { border-style: dashed; }
@@ -374,3 +382,4 @@ body.dragging .dropzone { display: grid; }
 .sh-tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .sh-tabs button.hid { font-style: italic; color: var(--muted); }
 .sh-note { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.qlist .qno { margin-left: 6px; }

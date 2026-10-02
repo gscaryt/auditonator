@@ -19,23 +19,49 @@ const Parse = (() => {
     return lines.slice(start + 1, end);
   }
 
+  // the audit's own numbers ("12.", sub-items "a.") when present, else the position
   function parseQueries(lines) {
     const tops = [];
     let last = null;
     for (const l of lines) {
       let m;
-      if ((m = l.match(/^([*+-]|\d+[.)])\s+(.*)$/))) { tops.push(last = { text: m[2].trim(), subs: [] }); }
+      if ((m = l.match(/^([*+-]|(\d+)[.)])\s+(.*)$/))) { tops.push(last = { num: m[2] || String(tops.length + 1), text: m[3].trim(), subs: [] }); }
       else if ((m = l.match(/^\s+([*+-]|\d+[.)])\s+(.*)$/)) && tops.length) { tops[tops.length - 1].subs.push(last = { text: m[2].trim() }); }
       else if (l.trim() && last && !heading(l) && !/^\s*---/.test(l)) last.text += ' ' + l.trim();
     }
     const queries = [], groups = {};
     tops.forEach((t, i) => {
-      if (!t.subs.length) return queries.push({ id: `q${queries.length + 1}`, text: t.text, orig: t.text });
+      if (!t.subs.length) return queries.push({ id: `q${queries.length + 1}`, num: t.num, text: t.text, orig: t.text });
       const gid = `g${i + 1}`;
-      groups[gid] = { header: t.text, kind: /typo|grammat/i.test(t.text) ? 'typo' : /misreferenc|cross-referenc/i.test(t.text) ? 'misref' : 'list' };
-      t.subs.forEach(s => queries.push({ id: `q${queries.length + 1}`, text: s.text, orig: s.text, group: gid }));
+      groups[gid] = { num: t.num, header: t.text, kind: /typo|grammat/i.test(t.text) ? 'typo' : /misreferenc|cross-referenc/i.test(t.text) ? 'misref' : 'list' };
+      t.subs.forEach((s, k) => {
+        const m = s.text.match(/^([a-z])[.)]\s+(.*)$/);
+        const text = m ? m[2] : s.text;
+        queries.push({ id: `q${queries.length + 1}`, num: t.num + (m ? m[1] : String.fromCharCode(97 + k)), text, orig: text, group: gid });
+      });
     });
     return { queries, groups };
+  }
+
+  // "- Related entities: …", "- Issue type: …", "- Queries: …" at the top of a finding's body
+  const META = /^\s*[-*]\s+(?:\*\*|\*)?(Related entities|Issue type|Queries)(?::\*\*|:\*|\*\*:|\*:|:)\s*(.*)$/i;
+  function splitMeta(body) {
+    const meta = {};
+    let i = 0;
+    while (i < body.length && (!body[i].trim() || META.test(body[i]))) {
+      const m = body[i].match(META);
+      if (m) meta[m[1].toLowerCase()[0]] = m[2].trim();
+      i++;
+    }
+    if (!Object.keys(meta).length) return { body };
+    return {
+      body: body.slice(i),
+      meta: {
+        ents: meta.r || '',
+        types: (meta.i || '').split(/\s*[;,]\s*/).filter(Boolean),
+        queries: (meta.q || '').split(/\s*[;,]\s*|\s+and\s+/).map(s => s.replace(/^(?:Q|queries?)\s*/i, '').trim()).filter(Boolean)
+      }
+    };
   }
 
   function parseAudit(text) {
@@ -51,7 +77,13 @@ const Parse = (() => {
     const stop = Math.min(...[qIdx, cIdx, lines.length].filter(i => i >= 0));
     const lit = lines.slice(0, stop).some(l => { const m = l.match(HEAD_RE); return m && m[1]; });
     let sec = '', cur = null;
-    const close = () => { if (cur) { cur.body = cur.body.join('\n').trim(); out.findings.push(cur); cur = null; } };
+    const close = () => {
+      if (!cur) return;
+      const s = splitMeta(cur.body);
+      cur.body = s.body.join('\n').trim();
+      if (s.meta) cur.meta = s.meta;
+      out.findings.push(cur); cur = null;
+    };
     for (let i = 0; i < stop; i++) {
       const l = lines[i];
       const m = l.match(HEAD_RE);
@@ -149,8 +181,20 @@ const Parse = (() => {
     return into;
   }
 
+  // the audit's "Queries:" lines link first (first finding to claim a query keeps it; "19" claims all of group 19);
+  // whatever stays unlinked, and every query of an audit without those lines, is matched by wording
+  function link(findings, queries, groups) {
+    findings.forEach(f => (f.meta ? f.meta.queries : []).forEach(n => {
+      const g = Object.keys(groups).find(k => groups[k].num === n);
+      queries.forEach(q => { if (!q.finding && (q.num === n || (g && q.group === g))) { q.finding = f.id; q.linked = true; } });
+    }));
+  }
+
   function match(findings, queries, groups) {
     if (!findings.length) return;
+    link(findings, queries, groups);
+    queries = queries.filter(q => !q.finding);
+    if (!queries.length) return;
     const docs = findings.map(f => tokens(f.body, 1, tokens(f.title + ' ' + f.location, 2)));
     const df = new Map();
     docs.forEach(d => d.forEach((_, k) => df.set(k, (df.get(k) || 0) + 1)));

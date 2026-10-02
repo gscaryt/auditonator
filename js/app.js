@@ -61,9 +61,14 @@
     }
     const all = [...map.values()];
     all.forEach(f => {
+      f.colour0 = f.colour;
+      const o = (st.findings[f.id] || {}).colour;
+      if (o && COLOURS.includes(o)) f.colour = o;
       const qs = st.queries.filter(q => q.finding === f.id).map(q => q.text);
-      f.type = Facets.type(f);
-      f.ents = Facets.entities([f.title, f.location, f.head, f.brief, f.body, ...qs].join('\n'));
+      const types = f.meta ? f.meta.types.map(Facets.typeOf).filter(Boolean) : [];
+      f.types = types.length ? [...new Set(types)] : [Facets.type(f)];
+      f.type = f.types[0];
+      f.ents = Facets.entities(f.meta && f.meta.ents ? f.meta.ents : [f.title, f.location, f.head, f.brief, f.body, ...qs].join('\n'));
     });
     model = {
       A, C, map,
@@ -141,7 +146,7 @@
     const A = Parse.parseAudit(m.text);
     if (!A.findings.length) { toast(`No findings found in ${m.name}`); return true; }
     if (st && src.audit === m.text) return true;
-    const progress = st && Object.values(st.findings).some(v => v.s || v.note);
+    const progress = st && Object.values(st.findings).some(v => v.s || v.note || v.colour);
     if (progress && !confirm(`Replace the current work on ${model.msid} with ${A.msid || m.name}?`)) return false;
     if (st && st.msid && st.msid !== A.msid) {
       src.critical = ''; src.criticalName = ''; fileHandle = null;
@@ -212,9 +217,13 @@
     toast(`Copied ${items.length} queries`);
   }
 
+  const STATUS = { confirmed: 'Confirmed', dismissed: 'Dismissed' };
+  const reranked = f => f.colour !== f.colour0;
+
   function exportXlsx() {
     const items = exportItems();
-    if (!items.length) return toast('No queries: confirm findings first');
+    const notes = model.order.filter(f => ((st.findings[f.id] || {}).note || '').trim() || reranked(f));
+    if (!items.length && !notes.length) return toast('Nothing to export: confirm findings or add notes first');
     const rows = items.map((o, i) => {
       const ids = [...new Set(o.items.map(q => q.finding))];
       const fs = ids.map(id => model.map.get(id)).filter(Boolean);
@@ -225,7 +234,19 @@
         [...new Set(fs.map(f => CNAME[f.colour]))].join(', ')
       ];
     });
-    download(XLSX.build(['No.', 'Author query', 'Finding', 'Triage'], rows, [6, 110, 12, 10]), `${model.msid || 'audit'}-Author_Queries.xlsx`);
+    const nrows = notes.map(f => [
+      fname(f),
+      plain(f.head || f.title),
+      reranked(f) ? { v: CNAME[f.colour], hl: true } : CNAME[f.colour],
+      CNAME[f.colour0],
+      STATUS[status(f.id)] || 'Open',
+      ((st.findings[f.id] || {}).note || '').trim()
+    ]);
+    download(XLSX.build([
+      { name: 'Author queries', header: ['No.', 'Author query', 'Finding', 'Triage'], rows, widths: [6, 110, 12, 10] },
+      { name: 'Internal notes', header: ['Finding', 'Title', 'Severity', 'Triage', 'Status', 'Note'], rows: nrows, widths: [9, 50, 10, 10, 11, 80] }
+    ]), `${model.msid || 'audit'}-Author_Queries.xlsx`);
+    toast(`Exported ${items.length} quer${items.length === 1 ? 'y' : 'ies'} · ${notes.length} note${notes.length === 1 ? '' : 's'}`);
   }
 
   // ---------- actions ----------
@@ -235,13 +256,24 @@
     changed(); render();
   }
 
+  function setColour(id, c) {
+    const f = model.map.get(id);
+    if (!f || !COLOURS.includes(c)) return;
+    const fs = fstate(id);
+    if (c === f.colour0) delete fs.colour; else fs.colour = c;
+    changed(); build(); render();
+    const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+    if (el) el.scrollIntoView({ block: 'nearest' });
+    else toast(`${fname(f)} moved to ${CNAME[c]} (hidden by filters)`);
+  }
+
   // skip: leave one filter dimension out, for the counts shown on that dimension's own controls
   function passes(f, skip) {
     const q = ui.q.trim().toLowerCase();
     const ents = [...ui.ents];
     return (skip === 'colour' || !ui.colours.size || ui.colours.has(f.colour)) &&
       (ui.status === 'all' || (ui.status === 'open' ? !status(f.id) : status(f.id) === ui.status)) &&
-      (skip === 'type' || !ui.types.size || ui.types.has(f.type)) &&
+      (skip === 'type' || !ui.types.size || f.types.some(t => ui.types.has(t))) &&
       (skip === 'entity' || !ents.length || (ui.entMode === 'all' ? ents.every(k => f.ents.includes(k)) : ents.some(k => f.ents.includes(k)))) &&
       (!q || `${f.id} ${f.title} ${f.head} ${f.brief} ${f.location} ${f.body}`.toLowerCase().includes(q));
   }
@@ -335,12 +367,14 @@
     const d = model ? model.order.filter(f => status(f.id) === 'dismissed').length : 0;
     $('#progress').innerHTML = n ? `<i class="p-c" style="width:${100 * c / n}%"></i><i class="p-d" style="width:${100 * d / n}%"></i>` : '';
     $('#progress').title = n ? `${c} confirmed · ${d} dismissed · ${n - c - d} open` : '';
-    $('#stat').innerHTML = n ? `<b>${c}</b> ✓ · <b>${d}</b> ✕ · <b>${n - c - d}</b> open` : '';
+    const r = model ? model.order.filter(reranked).length : 0;
+    $('#stat').innerHTML = n ? `<b>${c}</b> ✓ · <b>${d}</b> ✕ · <b>${n - c - d}</b> open${r ? ` · <b>${r}</b> re-ranked` : ''}` : '';
     const nq = model ? exportItems().length : 0;
     $('#nQ').textContent = nq;
     $('#nFind').textContent = n;
   }
 
+  const typeChips = f => f.types.map(t => `<button class="ty ${ui.types.has(t) ? 'on' : ''}" data-type="${t}" title="Filter by type">${Facets.TYPE_LABEL[t]}</button>`).join('');
   const entLabel = k => k.startsWith('src:') ? `Source data · ${Facets.label(k.slice(4))}` : Facets.label(k);
 
   // chips on a card: objects only (sections are in the details), source data folded into its object
@@ -416,12 +450,12 @@
 
   function typePop() {
     const base = model.order.filter(f => passes(f, 'type'));
-    const present = new Set(model.order.map(f => f.type));
+    const present = new Set(model.order.flatMap(f => f.types));
     const rows = Facets.TYPES.filter(t => present.has(t)).map(t => {
-      const n = base.filter(f => f.type === t).length;
+      const n = base.filter(f => f.types.includes(t)).length;
       return `<button class="tr ${ui.types.has(t) ? 'on' : ''} ${n ? '' : 'zero'}" data-type="${t}"><i></i><span>${Facets.TYPE_LABEL[t]}</span><em>${n}</em></button>`;
     }).join('');
-    return `<div class="ph"><b>Type of issue</b><span class="grow"></span>${ui.types.size ? '<button class="lnk" data-act="cleartypes">Clear</button>' : ''}</div><div class="pb tl">${rows}</div><p class="pn">Assigned automatically from each finding's wording.</p>`;
+    return `<div class="ph"><b>Type of issue</b><span class="grow"></span>${ui.types.size ? '<button class="lnk" data-act="cleartypes">Clear</button>' : ''}</div><div class="pb tl">${rows}</div><p class="pn">${model.A && model.A.findings.some(f => f.meta) ? 'As given in the audit.' : 'Assigned automatically from each finding\'s wording.'}</p>`;
   }
 
   function renderCards() {
@@ -440,10 +474,10 @@
       const nq = st.queries.filter(q => q.finding === f.id).length;
       const brief = f.brief || (f.head ? '' : f.location);
       html += `<article class="card c-${f.colour} ${s ? 'is-' + s : ''} ${ui.sel === f.id ? 'is-sel' : ''}" data-id="${esc(f.id)}">
-        <div class="cm"><label class="chk" title="Confirm (C)"><input type="checkbox" data-act="confirm" ${s === 'confirmed' ? 'checked' : ''}></label><span class="fid">${fname(f)}</span>${f.conditional ? '<span class="tag">Conditional</span>' : ''}${f.with.length ? `<span class="tag">with #${f.with.join(', #')}</span>` : ''}${(st.findings[f.id] || {}).note ? '<span class="tag note">Note</span>' : ''}<span class="qn" title="Author queries">${nq}&thinsp;Q</span><button class="x" data-act="dismiss" title="Dismiss (X)">✕</button></div>
+        <div class="cm"><label class="chk" title="Confirm (C)"><input type="checkbox" data-act="confirm" ${s === 'confirmed' ? 'checked' : ''}></label><span class="fid">${fname(f)}</span>${f.conditional ? '<span class="tag">Conditional</span>' : ''}${f.with.length ? `<span class="tag">with #${f.with.join(', #')}</span>` : ''}${reranked(f) ? `<span class="tag sev" title="Severity changed from the triage">${CNAME[f.colour0]}→${CNAME[f.colour]}</span>` : ''}${(st.findings[f.id] || {}).note ? '<span class="tag note">Note</span>' : ''}<span class="qn" title="Author queries">${nq}&thinsp;Q</span><button class="x" data-act="dismiss" title="Dismiss (X)">✕</button></div>
         <h3>${inline(f.head || f.title)}</h3>
         ${brief ? `<p>${inline(brief)}</p>` : ''}
-        <div class="cf-row"><button class="ty ${ui.types.has(f.type) ? 'on' : ''}" data-type="${f.type}" title="Filter by type">${Facets.TYPE_LABEL[f.type]}</button>${cardEnts(f)}</div>
+        <div class="cf-row">${typeChips(f)}${cardEnts(f)}</div>
       </article>`;
     });
     if (!v.length) html += `<div class="none">No findings match the filters.${filtering() ? ' <button class="lnk" data-act="clearfilters">Clear filters</button>' : ''}</div>`;
@@ -460,6 +494,7 @@
         ${g && (!i || qs[i - 1].group !== q.group) ? `<div class="qg">${inline(g.header)}</div>` : ''}
         <div class="qt" contenteditable="${CE}" spellcheck="true" data-act="qtext">${esc(q.text)}</div>
         <div class="qa">
+          ${q.num ? `<span class="qno" title="Query number in the audit">Q${esc(q.num)}</span>` : ''}
           <select data-act="qmove" title="Linked finding">${opts}</select>
           ${q.orig && q.text !== q.orig ? '<button data-act="qreset">Revert</button>' : ''}
           ${q.custom ? '<button data-act="qdel">Delete</button>' : ''}
@@ -483,7 +518,8 @@
     el.tabIndex = -1;
     el.innerHTML = `
       <div class="d-bar c-${f.colour}">
-        <span class="pill">${CNAME[f.colour]}</span><span class="fid">${fname(f)}</span>
+        <select class="pill" data-act="sev" title="Severity (1–4 · 0 reverts to the triage)">${COLOURS.filter(c => c !== 'none' || f.colour0 === 'none').map(c => `<option value="${c}" ${c === f.colour ? 'selected' : ''}>${CNAME[c]}</option>`).join('')}</select>
+        ${reranked(f) ? `<button class="rev" data-act="sevreset" title="Revert to the triage colour (0)">was ${CNAME[f.colour0]} ↺</button>` : ''}<span class="fid">${fname(f)}</span>
         ${f.conditional ? '<span class="tag">Conditional</span>' : ''}
         <span class="sec">${inline(f.section || '')}</span>
         <span class="grow"></span>
@@ -495,7 +531,7 @@
       <div class="d-scroll">
         <h2>${inline(f.title)}</h2>
         ${f.location ? `<div class="d-loc">${inline(f.location)}</div>` : ''}
-        <div class="d-ents"><button class="ty ${ui.types.has(f.type) ? 'on' : ''}" data-type="${f.type}" title="Filter by type">${Facets.TYPE_LABEL[f.type]}</button>${f.ents.map(k => `<button class="ent ${ui.ents.has(k) ? 'on' : ''} ${k.startsWith('x:') ? 'sec' : ''}" data-ent="${k}" title="Filter: ${esc(entLabel(k))}">${esc(k.startsWith('src:') ? 'SD · ' + Facets.label(k.slice(4)) : Facets.label(k))}</button>`).join('')}</div>
+        <div class="d-ents">${typeChips(f)}${f.ents.map(k => `<button class="ent ${ui.ents.has(k) ? 'on' : ''} ${k.startsWith('x:') ? 'sec' : ''}" data-ent="${k}" title="Filter: ${esc(entLabel(k))}">${esc(k.startsWith('src:') ? 'SD · ' + Facets.label(k.slice(4)) : Facets.label(k))}</button>`).join('')}</div>
         ${f.head || f.brief ? `<div class="d-tri c-${f.colour}">${f.head ? `<b>${inline(f.head)}</b> ` : ''}${inline(f.brief)}${f.with.length ? ` <span class="tag">ranked with #${f.with.join(', #')}</span>` : ''}</div>` : ''}
         ${f.body ? `<div class="md d-body">${MD.render(f.body)}</div>` : ''}
         <section class="d-q">
@@ -503,7 +539,7 @@
           ${qs.map(queryEditor).join('') || '<p class="muted">No query linked to this finding.</p>'}
           <button class="add" data-act="addq">+ Add query</button>
         </section>
-        <section class="d-note"><h4>Note</h4><textarea data-act="note" rows="3" placeholder="Private note — saved with the work, not exported">${esc(note)}</textarea></section>
+        <section class="d-note"><h4>Note</h4><textarea data-act="note" rows="3" placeholder="Private note — never in copied queries; exported on the Excel tab ‘Internal notes’">${esc(note)}</textarea></section>
       </div>`;
     el.querySelectorAll('.d-loc, .d-body, .d-tri').forEach(linkPages);
     el.querySelectorAll('.d-loc, .d-body, .d-tri').forEach(linkSheets);
@@ -580,10 +616,11 @@
     const items = exportItems();
     const nf = new Set(items.flatMap(o => o.items.map(q => q.finding))).size;
     $('#qCount').innerHTML = `<b>${items.length}</b> queries from <b>${nf}</b> confirmed finding${nf === 1 ? '' : 's'}`;
+    const qno = q => q.num ? `<span class="qno" title="Query number in the audit">Q${esc(q.num)}</span>` : '';
     const chip = id => { const f = model.map.get(id); return f ? `<button class="fchip c-${f.colour}" data-goto="${esc(id)}">${fname(f)}</button>` : ''; };
     $('#qList').innerHTML = items.length ? items.map(o => o.header
-      ? `<li><div class="qx">${inline(o.header)}</div><ul>${o.items.map((q, i) => `<li><span>${inline(q.text)}</span>${i && o.items[i - 1].finding === q.finding ? '' : chip(q.finding)}</li>`).join('')}</ul></li>`
-      : `<li><span>${inline(o.items[0].text)}</span>${chip(o.items[0].finding)}</li>`).join('')
+      ? `<li><div class="qx">${inline(o.header)}</div><ul>${o.items.map((q, i) => `<li><span>${inline(q.text)}</span>${qno(q)}${i && o.items[i - 1].finding === q.finding ? '' : chip(q.finding)}</li>`).join('')}</ul></li>`
+      : `<li><span>${inline(o.items[0].text)}</span>${qno(o.items[0])}${chip(o.items[0].finding)}</li>`).join('')
       : '<p class="muted">Confirm findings to build the query list.</p>';
   }
 
@@ -706,6 +743,7 @@
     }
     if (t.dataset.goto) return openDetail(t.dataset.goto);
     if (act === 'confirm' || act === 'dismiss') { e.stopPropagation(); return setStatus(card ? card.dataset.id : ui.sel, act === 'confirm' ? 'confirmed' : 'dismissed'); }
+    if (act === 'sevreset') { const f = model.map.get(ui.sel); return f && setColour(f.id, f.colour0); }
     if (act === 'prev') return step(-1);
     if (act === 'next') return step(1);
     if (act === 'qinc' && q) { q.include = t.checked; qEl.classList.toggle('off', !q.include); changed(); renderHeader(); return renderQueries(); }
@@ -731,6 +769,7 @@
       const q = st.queries.find(x => x.id === t.closest('.q').dataset.q);
       q.finding = t.value; changed(); render();
     }
+    if (t.dataset.act === 'sev' && ui.sel) setColour(ui.sel, t.value);
     if (t.id === 'pdfOffset' && pdfs[pdfIdx]) { pdfs[pdfIdx].offset = +t.value || 0; changed(); }
   });
 
@@ -763,6 +802,7 @@
     else if (k === 'arrowup' || k === 'k') { e.preventDefault(); step(-1); }
     else if (k === 'c' || k === ' ') { e.preventDefault(); if (ui.sel) setStatus(ui.sel, 'confirmed'); }
     else if (k === 'x') { if (ui.sel) setStatus(ui.sel, 'dismissed'); }
+    else if (/^[0-4]$/.test(k)) { const f = ui.sel && model.map.get(ui.sel); if (f) setColour(f.id, k === '0' ? f.colour0 : COLOURS[+k - 1]); }
     else if (k === 'p') { ui.pdf = !ui.pdf; renderHeader(); renderPdf(); }
     else if (k === 'q') document.querySelector(`[data-tab="${ui.tab === 'findings' ? 'queries' : 'findings'}"]`).click();
     else if (k === '/') { e.preventDefault(); $('#search').focus(); }
