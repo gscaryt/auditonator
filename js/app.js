@@ -256,6 +256,15 @@
     changed(); render();
   }
 
+  function confirmAll() {
+    const ids = visible().filter(f => !status(f.id)).map(f => f.id);
+    if (!ids.length) return toast('No open findings to confirm');
+    if (!confirm(`Confirm ${ids.length} open finding${ids.length === 1 ? '' : 's'}${filtering() ? ' shown by the current filters' : ''}?`)) return;
+    ids.forEach(id => { fstate(id).s = 'confirmed'; });
+    changed(); render();
+    toast(`Confirmed ${ids.length} finding${ids.length === 1 ? '' : 's'}`);
+  }
+
   function setColour(id, c) {
     const f = model.map.get(id);
     if (!f || !COLOURS.includes(c)) return;
@@ -393,6 +402,7 @@
   }
 
   function renderFilters() {
+    $('#btnConfirmAll').disabled = !visible().some(f => !status(f.id));
     const counts = {};
     model.order.filter(f => passes(f, 'colour')).forEach(f => counts[f.colour] = (counts[f.colour] || 0) + 1);
     const present = new Set(model.order.map(f => f.colour));
@@ -728,6 +738,7 @@
     if (t.dataset.entmode) { ui.entMode = t.dataset.entmode; renderCards(); return renderDetail(); }
     if (act === 'clearents') { ui.ents.clear(); renderCards(); return renderDetail(); }
     if (act === 'cleartypes') { ui.types.clear(); renderCards(); return renderDetail(); }
+    if (act === 'confirmall') return confirmAll();
     if (act === 'clearfilters') {
       ui.ents.clear(); ui.types.clear(); ui.colours.clear(); ui.status = 'all'; ui.q = ''; $('#search').value = '';
       renderCards(); return renderDetail();

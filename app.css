@@ -123,6 +123,7 @@ main.with-pdf { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.15fr); }
 .fbtn:hover, .fbtn.open { border-color: var(--accent); color: var(--accent); }
 .fbtn.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .fbtn b { font-size: 10.5px; background: var(--accent); color: #fff; border-radius: 8px; padding: 0 5px; line-height: 15px; }
+.fbtn:disabled { opacity: .45; cursor: default; border-color: var(--line-2); color: var(--muted); }
 .fbtn .car { font-size: 9px; opacity: .7; margin-left: 1px; }
 .pop { position: absolute; top: calc(100% + 5px); left: 0; z-index: 40; width: min(440px, calc(100vw - 32px)); max-height: min(70vh, 560px); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: 0 12px 32px rgba(16, 24, 40, .18), 0 2px 6px rgba(16, 24, 40, .08); }
 .fdrop[data-dim="type"] .pop { width: 270px; }
