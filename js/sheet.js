@@ -62,8 +62,8 @@ const Sheet = (() => {
         if (csize === 0xFFFFFFFF) { csize = Number(cd.getBigUint64(r, true)); r += 8; }
         if (loc === 0xFFFFFFFF) loc = Number(cd.getBigUint64(r, true));
       }
-      const name = dec.decode(new Uint8Array(cd.buffer, p + 46, nl)).replace(/^\//, '').toLowerCase();
-      out.set(name, { method: cd.getUint16(p + 10, true), csize, usize, loc });
+      const name = dec.decode(new Uint8Array(cd.buffer, p + 46, nl)).replace(/^\//, '');
+      out.set(name.toLowerCase(), { name, method: cd.getUint16(p + 10, true), csize, usize, loc });
       p += 46 + nl + xl + cl;
     }
     return out;
@@ -403,5 +403,5 @@ const Sheet = (() => {
     return csv(file, ext);
   }
 
-  return { open };
+  return { open, unzip, entryBytes, entryText };
 })();

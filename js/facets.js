@@ -40,7 +40,7 @@ const Facets = (() => {
       nums.forEach(([s, v]) => {
         const sc = scope || (s ? 's' : '');
         if (!v) return;
-        out.push({ key: `${sc}${n}${v}`, src });
+        out.push({ key: `${sc}${n}${v}`, src, index: m.index });
       });
     }
     return out;
@@ -114,7 +114,7 @@ const Facets = (() => {
   const BY_LABEL = Object.fromEntries(TYPES.map(t => [squash(t[1]), t[0]]));
   const typeOf = label => BY_LABEL[squash(label)] || null;
 
-  return { entities, type, typeOf, label, group, sortKey, GROUPS, TYPES: TYPES.map(t => t[0]).concat('other'), TYPE_LABEL };
+  return { refs, entities, type, typeOf, label, group, sortKey, GROUPS, TYPES: TYPES.map(t => t[0]).concat('other'), TYPE_LABEL };
 })();
 
 if (typeof module !== 'undefined') module.exports = Facets;

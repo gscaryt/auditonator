@@ -13,15 +13,17 @@
   <div class="ms"><b id="msid"></b><span id="mstitle"></span></div>
   <div class="files" id="files"></div>
   <div class="actions">
-    <button class="btn" data-act="load" title="Audit .md, triage .md, PDFs, spreadsheets or a saved .json">Load</button>
+    <button class="btn" data-act="load" title="A package .zip, or audit .md, triage .md, plots, PDFs, Word files, spreadsheets or a saved .json">Load</button>
+    <button class="btn" data-act="loadfolder" title="Load a whole audited/&lt;MSID&gt;/ folder: audit, triage, plots, PDFs, Word files and spreadsheets">Load folder</button>
     <button class="btn" id="btnSave" data-act="save" title="Save work (⌘/Ctrl+S) · Shift-click: save as">Save</button>
     <span class="sep"></span>
     <button class="btn" id="btnCopy" data-act="copy" title="Copy author queries of confirmed findings">Copy queries</button>
-    <button class="btn" id="btnXlsx" data-act="xlsx" title="Excel: author queries (tab 1) and internal notes (tab 2)">Excel</button>
+    <button class="btn" id="btnXlsx" data-act="xlsx" title="Excel: author queries, internal notes and labels, and any added findings">Excel</button>
     <span class="sep"></span>
-    <button class="btn" id="btnPdf" data-act="pdf" title="Toggle the PDF and spreadsheet viewer (P)">PDF</button>
+    <button class="btn" id="btnPdf" data-act="pdf" title="Toggle the PDF, Word and spreadsheet viewer (P)">PDF</button>
   </div>
-  <input type="file" id="fileInput" multiple accept=".md,.markdown,.txt,.pdf,.json,.xlsx,.xlsm,.xls,.ods,.csv,.tsv" hidden>
+  <input type="file" id="fileInput" multiple accept=".zip,.md,.markdown,.txt,.pdf,.docx,.png,.json,.xlsx,.xlsm,.xls,.ods,.csv,.tsv" hidden>
+  <input type="file" id="dirInput" webkitdirectory hidden>
 </header>
 <div class="progress" id="progress"></div>
 
@@ -40,15 +42,17 @@
         </div>
         <div class="fdrop" data-dim="entity"><button class="fbtn" data-pop="entity" title="Show findings that involve a figure, table, source-data sheet or section (E)"></button><div class="pop" hidden></div></div>
         <div class="fdrop" data-dim="type"><button class="fbtn" data-pop="type" title="Show findings of a type (T)"></button><div class="pop" hidden></div></div>
+        <div class="fdrop" data-dim="label"><button class="fbtn" data-pop="label" title="Show findings with a label"></button><div class="pop" hidden></div></div>
         <input id="search" type="search" placeholder="Search  /" autocomplete="off">
         <button class="fbtn" id="btnConfirmAll" data-act="confirmall" title="Confirm every open finding shown (dismissed ones are left alone)">Confirm all</button>
+        <button class="fbtn" data-act="addfinding" title="Add a finding of your own (N)">+ Finding</button>
       </div>
       <div class="active" id="activeFilters" hidden></div>
       <div class="cards" id="cards"></div>
-      <div class="keys"><kbd>↑</kbd><kbd>↓</kbd> move <kbd>↵</kbd> details <kbd>C</kbd> confirm <kbd>X</kbd> dismiss <kbd>1</kbd>–<kbd>4</kbd> severity <kbd>E</kbd> entity <kbd>T</kbd> type <kbd>P</kbd> PDF <kbd>Q</kbd> queries</div>
+      <div class="keys"><kbd>↑</kbd><kbd>↓</kbd> move <kbd>↵</kbd> details <kbd>C</kbd> confirm <kbd>X</kbd> dismiss <kbd>1</kbd>–<kbd>4</kbd> severity <kbd>E</kbd> entity <kbd>T</kbd> type <kbd>L</kbd> label <kbd>N</kbd> new finding <kbd>P</kbd> PDF <kbd>Q</kbd> queries</div>
     </div>
     <div id="queriesView" class="view" hidden>
-      <div class="qbar"><span id="qCount"></span><span class="grow"></span><button class="btn" data-act="copy">Copy</button><button class="btn" data-act="xlsx" title="Excel: author queries (tab 1) and internal notes (tab 2)">Excel</button></div>
+      <div class="qbar"><span id="qCount"></span><span class="grow"></span><button class="btn" data-act="copy">Copy</button><button class="btn" data-act="xlsx" title="Excel: author queries, internal notes and labels, and any added findings">Excel</button></div>
       <ol class="qlist" id="qList"></ol>
     </div>
     <div class="modal" id="modal" hidden><div class="dialog" id="detail" role="dialog" aria-modal="true" aria-label="Finding details"></div></div>
@@ -59,10 +63,15 @@
       <label id="pdfOffsetWrap" title="Printed page number minus PDF page number">Offset <input id="pdfOffset" type="number" step="1"></label>
       <button class="x" data-act="closepdf" title="Close viewer (P)">✕</button>
     </div>
-    <div class="pdf-empty" id="pdfEmpty"><button class="btn" data-act="loadpdf">Load PDF or spreadsheet</button></div>
+    <div class="pdf-empty" id="pdfEmpty"><button class="btn" data-act="loadpdf">Load PDF, Word file or spreadsheet</button></div>
     <iframe id="pdfFrame" title="PDF" hidden></iframe>
+    <div class="docx" id="docView" hidden>
+      <div class="sh-bar"><span class="sh-cell" id="dxNote"></span><input id="dxFind" type="search" placeholder="Find in document  ↵" autocomplete="off"><span class="sh-n" id="dxFindN"></span></div>
+      <div class="dx-doc" id="dxDoc"></div>
+    </div>
     <div class="sheet" id="sheetView" hidden>
       <div class="sh-bar"><span class="sh-cell" id="shCell"></span><input id="shFind" type="search" placeholder="Find in sheet  ↵" autocomplete="off"><span class="sh-n" id="shFindN"></span></div>
+      <div class="sh-key" id="shKey" hidden></div>
       <div class="sh-grid" id="shGrid"></div>
       <div class="sh-foot"><div class="sh-tabs" id="shTabs"></div><span class="sh-note" id="shNote"></span></div>
     </div>
@@ -73,9 +82,12 @@
   <div class="drop-card">
     <div class="logo big"><i></i><i></i><i></i><i></i></div>
     <h1>Load an audit</h1>
-    <p>Drop or select <code>…-Audit_v1.md</code>, <code>…-Audit_Critical_v1.md</code> the manuscript PDFs and source-data spreadsheets together, or a saved <code>…-Auditonator.json</code>.</p>
-    <button class="btn primary" data-act="load">Select files</button>
+    <p>Drop or select the whole <code>audited/&lt;MSID&gt;/</code> folder, or a <code>.zip</code> of it: the audit, triage, plots, manuscript files and source data load together.</p>
+    <p>Single files work too: <code>…-Audit_v1.md</code>, <code>…-Audit_Critical_v1.md</code>, plot PNGs, PDFs, Word files, spreadsheets, or a saved <code>…-Auditonator.json</code>.</p>
+    <button class="btn primary" data-act="loadfolder">Select folder</button>
+    <button class="btn" data-act="load">Select files or ZIP</button>
     <div id="resume"></div>
+    <p class="credit">Auditonator and the manuscript consistency audit by Gustavo Tontini</p>
   </div>
 </div>
 
@@ -87,6 +99,9 @@
 <script src="js/facets.js"></script>
 <script src="js/xlsx.js"></script>
 <script src="js/sheet.js"></script>
+<script src="js/docx.js"></script>
+<script src="js/cells.js"></script>
+<script src="js/export.js"></script>
 <script src="js/grid.js"></script>
 <script src="js/app.js"></script>
 </body>

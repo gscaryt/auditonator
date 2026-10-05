@@ -3,14 +3,13 @@
 const Grid = (() => {
   const RH = 22, OVER = 40;
   const colName = i => { let s = ''; for (i++; i > 0; i = (i - 1) / 26 | 0) s = String.fromCharCode(65 + (i - 1) % 26) + s; return s; };
-  const colIndex = s => [...s].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
   const fmt = v => typeof v === 'number' ? (Number.isInteger(v) ? String(v) : String(+v.toPrecision(15))) : v == null ? '' : String(v);
   const exact = v => typeof v === 'number' ? String(v) : fmt(v);   // full stored precision
   const NUM = /^\s*[-+]?(\d[\d,]*\.?\d*|\.\d+)(e[-+]?\d+)?%?\s*$/i;
   const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   function create(host, onSelect) {
-    let d = null, widths = [], lefts = [0], RW = 40, win = null, sel = null, mark = null, hits = null, raf = 0;
+    let d = null, widths = [], lefts = [0], RW = 40, win = null, sel = null, paint = null, hits = null, raf = 0;
     host.addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); });
     new ResizeObserver(() => draw()).observe(host);
     host.addEventListener('click', e => {
@@ -18,11 +17,14 @@ const Grid = (() => {
       if (td) select(+td.parentNode.dataset.r, +td.dataset.c, false);
     });
 
-    const inRanges = (rs, x) => rs.some(([a, b]) => x >= a && x <= b);
-    const marked = (r, c) => mark && (!mark.rows.length || inRanges(mark.rows, r)) && (!mark.cols.length || inRanges(mark.cols, c));
+    // rects: [r0, c0, r1, c1], 0-based, inclusive
+    const inRect = (r, c) => paint.rects.some(x => r >= x[0] && r <= x[2] && c >= x[1] && c <= x[3]);
+    const markCls = (r, c) => paint ? paint.cells.get(r * 16384 + c) || (inRect(r, c) ? 'mk' : '') : '';
+    const rowMarked = r => paint && (paint.rows.has(r) || paint.rects.some(x => r >= x[0] && r <= x[2] && x[3] < 16383));
+    const colMarked = c => paint && (paint.cols.has(c) || paint.rects.some(x => c >= x[1] && c <= x[3] && x[2] < 1e6));
 
     function show(data) {
-      d = data; sel = null; mark = null; hits = null; win = null;
+      d = data; sel = null; paint = null; hits = null; win = null;
       const w = [];
       const sample = d.rows.length > 600 ? d.rows.slice(0, 400).concat(d.rows.slice(-200)) : d.rows;
       sample.forEach(row => row && row.forEach((v, c) => { const n = Math.min(40, fmt(v).length); if (!(w[c] >= n)) w[c] = n; }));
@@ -52,14 +54,15 @@ const Grid = (() => {
       for (let c = ca; c < cb; c++) cols.push(c);
       const hit = hits && hits.set;
       let h = `<table style="width:${RW + lefts[nc]}px"><colgroup><col style="width:${RW}px"><col style="width:${lefts[ca]}px">${cols.map(c => `<col style="width:${widths[c]}px">`).join('')}<col style="width:${lefts[nc] - lefts[cb]}px"></colgroup>`;
-      h += `<thead><tr><th class="cr"></th><th class="gap"></th>${cols.map(c => `<th${mark && inRanges(mark.cols, c) ? ' class="mk"' : ''}>${colName(c)}</th>`).join('')}<th class="gap"></th></tr></thead><tbody>`;
+      h += `<thead><tr><th class="cr"></th><th class="gap"></th>${cols.map(c => `<th${colMarked(c) ? ' class="mk"' : ''}>${colName(c)}</th>`).join('')}<th class="gap"></th></tr></thead><tbody>`;
       if (a) h += `<tr class="gap"><td colspan="${cols.length + 3}" style="height:${a * RH}px"></td></tr>`;
       for (let r = a; r < b; r++) {
         const row = d.rows[r] || [];
-        h += `<tr data-r="${r}"><th${mark && inRanges(mark.rows, r) ? ' class="mk"' : ''}>${r + 1}</th><td class="gap"></td>`;
+        h += `<tr data-r="${r}"><th${rowMarked(r) ? ' class="mk"' : ''}>${r + 1}</th><td class="gap"></td>`;
         for (const c of cols) {
           const v = row[c], s = fmt(v);
-          const cls = (typeof v === 'number' || NUM.test(s) ? 'n ' : '') + (marked(r, c) ? 'mk ' : '') + (hit && hit.has(r * 16384 + c) ? 'hit ' : '') + (sel && sel.r === r && sel.c === c ? 'sel' : '');
+          const m = markCls(r, c);
+          const cls = (typeof v === 'number' || NUM.test(s) ? 'n ' : '') + (m ? m + ' ' : '') + (hit && hit.has(r * 16384 + c) ? 'hit ' : '') + (sel && sel.r === r && sel.c === c ? 'sel' : '');
           h += `<td data-c="${c}"${cls ? ` class="${cls.trim()}"` : ''}${s.length > 30 ? ` title="${esc(s.slice(0, 500))}"` : ''}>${esc(s)}</td>`;
         }
         h += '<td class="gap"></td></tr>';
@@ -80,13 +83,21 @@ const Grid = (() => {
       draw(true);
     }
 
-    // target: { rows: [[first, last], …] 1-based, cols: [['A', 'C'], …] }
-    function highlight(t) {
-      if (!d) return;
-      mark = { rows: (t.rows || []).map(([a, b]) => [a - 1, (b || a) - 1]), cols: (t.cols || []).map(([a, b]) => [colIndex(a), colIndex(b || a)]) };
-      if (!mark.rows.length && !mark.cols.length) { mark = null; return draw(true); }
-      select(mark.rows.length ? mark.rows[0][0] : 0, mark.cols.length ? mark.cols[0][0] : 0, true);
+    // target: { ranges: [[r0, c0, r1, c1]] compared for identical values, rects: [...] marked only,
+    // focus: [r, c] } — all 0-based. Returns the colour key.
+    // external: cited ranges on other sheets with their values; still: repaint without moving the view
+    function highlight(t, still) {
+      if (!d) return [];
+      paint = Cells.paint(d, t.ranges || [], t.rects || [], t.external, t.sheet);
+      if (!paint.cells.size && !paint.rects.length) { paint = null; draw(true); return []; }
+      if (still) { draw(true); return paint.legend; }
+      const at = t.focus || (paint.legend[0] && paint.legend[0].at) || [0, 0];
+      select(Math.min(at[0], d.rows.length - 1), Math.min(at[1], d.ncols - 1), true);
+      return paint.legend;
     }
+
+    function unmark() { paint = null; draw(true); }
+    const jump = (r, c) => d && select(Math.min(r, d.rows.length - 1), Math.min(c, d.ncols - 1), true);
 
     function find(q, back) {
       if (!d) return null;
@@ -106,7 +117,7 @@ const Grid = (() => {
       return { i: i + 1, n: L.length };
     }
 
-    return { show, clear, highlight, find, draw };
+    return { show, clear, highlight, unmark, jump, find, draw, data: () => d, painted: () => paint };
   }
 
   return { create };
