@@ -364,8 +364,20 @@
     if (!ids.length) return toast('No open findings to confirm');
     if (!confirm(`Confirm ${ids.length} open finding${ids.length === 1 ? '' : 's'}${filtering() ? ' shown by the current filters' : ''}?`)) return;
     ids.forEach(id => { fstate(id).s = 'confirmed'; });
+    st.bulk = ids;
     changed(); render();
     toast(`Confirmed ${ids.length} finding${ids.length === 1 ? '' : 's'}`);
+  }
+
+  // findings the last "Confirm all" confirmed and that are still confirmed
+  const bulkIds = () => (st.bulk || []).filter(id => model.map.has(id) && status(id) === 'confirmed');
+
+  function undoConfirmAll() {
+    const ids = bulkIds();
+    delete st.bulk;
+    ids.forEach(id => { fstate(id).s = null; });
+    changed(); render();
+    toast(ids.length ? `Reopened ${ids.length} finding${ids.length === 1 ? '' : 's'}` : 'Nothing to undo');
   }
 
   function setColour(id, c) {
@@ -478,7 +490,10 @@
     if (ui.edit && ui.edit !== id) finishEdit();
     ui.sel = id;
     renderCards(); renderDetail();
-    if (scroll) { const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`); if (el) el.scrollIntoView({ block: 'nearest' }); }
+    const el = scroll && document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+    if (!el) return;
+    if (el.offsetTop === document.querySelector('.card').offsetTop) $('#cards').scrollTop = 0;
+    el.scrollIntoView({ block: 'nearest' });
   }
 
   function openDetail(id) {
@@ -594,6 +609,9 @@
 
   function renderFilters() {
     $('#btnConfirmAll').disabled = !visible().some(f => !status(f.id));
+    const nb = bulkIds().length, ub = $('#btnUndoConfirmAll');
+    ub.hidden = !nb;
+    ub.title = `Reopen the ${nb} finding${nb === 1 ? '' : 's'} the last "Confirm all" confirmed (ones you confirmed yourself stay confirmed)`;
     const counts = {};
     model.order.filter(f => passes(f, 'colour')).forEach(f => counts[f.colour] = (counts[f.colour] || 0) + 1);
     const present = new Set(model.order.map(f => f.colour));
@@ -1183,6 +1201,7 @@
     if (t.dataset.md) return mdTool(t.dataset.md);
     if (act === 'cleartypes') { ui.types.clear(); renderCards(); return renderDetail(); }
     if (act === 'confirmall') return confirmAll();
+    if (act === 'undoconfirmall') return undoConfirmAll();
     if (act === 'clearfilters') {
       ui.ents.clear(); ui.types.clear(); ui.labels.clear(); ui.colours.clear(); ui.status = 'all'; ui.q = ''; $('#search').value = '';
       renderCards(); return renderDetail();

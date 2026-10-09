@@ -195,6 +195,7 @@ main.with-pdf { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.15fr); }
   background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--c);
   border-radius: 8px; padding: 9px 12px 10px; cursor: pointer;
   box-shadow: var(--shadow); transition: border-color .12s, background .12s, opacity .12s, box-shadow .12s;
+  scroll-margin: 40px 0 8px;
 }
 .card:hover { border-color: var(--line-2); border-top-color: var(--c); box-shadow: 0 4px 14px rgba(16, 24, 40, .1); }
 .card.is-sel { border-color: var(--accent); border-top-color: var(--c); box-shadow: 0 0 0 1px var(--accent); }
@@ -227,9 +228,10 @@ main.with-pdf { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.15fr); }
 .x:hover { background: var(--sunk); color: var(--ink); }
 .card.is-dismissed .x { color: var(--ink); background: var(--sunk); }
 .none { padding: 30px; text-align: center; color: var(--muted); }
-.keys { padding: 6px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; background: var(--panel); white-space: nowrap; overflow: hidden; }
+.keys { padding: 6px 0 6px 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; background: var(--panel); white-space: nowrap; overflow: hidden; }
 kbd { font: 10.5px ui-monospace, Menlo, monospace; border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; margin: 0 1px 0 6px; background: var(--panel); }
-kbd:first-child { margin-left: 0; }
+kbd:first-of-type { margin-left: 0; }
+.by { float: right; position: relative; padding: 0 12px; background: var(--panel); color: color-mix(in srgb, var(--muted) 70%, transparent); }
 
 details.claim { background: var(--panel); border: 1px solid var(--line); border-radius: 7px; margin: 6px 0 0; }
 details.claim summary { padding: 7px 10px; font-weight: 600; cursor: pointer; font-size: 12px; color: var(--muted); }

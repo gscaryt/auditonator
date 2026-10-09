@@ -45,11 +45,12 @@
         <div class="fdrop" data-dim="label"><button class="fbtn" data-pop="label" title="Show findings with a label"></button><div class="pop" hidden></div></div>
         <input id="search" type="search" placeholder="Search  /" autocomplete="off">
         <button class="fbtn" id="btnConfirmAll" data-act="confirmall" title="Confirm every open finding shown (dismissed ones are left alone)">Confirm all</button>
+        <button class="fbtn" id="btnUndoConfirmAll" data-act="undoconfirmall" hidden>Undo confirm all</button>
         <button class="fbtn" data-act="addfinding" title="Add a finding of your own (N)">+ Finding</button>
       </div>
       <div class="active" id="activeFilters" hidden></div>
       <div class="cards" id="cards"></div>
-      <div class="keys"><kbd>↑</kbd><kbd>↓</kbd> move <kbd>↵</kbd> details <kbd>C</kbd> confirm <kbd>X</kbd> dismiss <kbd>1</kbd>–<kbd>4</kbd> severity <kbd>E</kbd> entity <kbd>T</kbd> type <kbd>L</kbd> label <kbd>N</kbd> new finding <kbd>P</kbd> PDF <kbd>Q</kbd> queries</div>
+      <div class="keys"><span class="by">by G.T.</span><kbd>↑</kbd><kbd>↓</kbd> move <kbd>↵</kbd> details <kbd>C</kbd> confirm <kbd>X</kbd> dismiss <kbd>1</kbd>–<kbd>4</kbd> severity <kbd>E</kbd> entity <kbd>T</kbd> type <kbd>L</kbd> label <kbd>N</kbd> new finding <kbd>P</kbd> PDF <kbd>Q</kbd> queries</div>
     </div>
     <div id="queriesView" class="view" hidden>
       <div class="qbar"><span id="qCount"></span><span class="grow"></span><button class="btn" data-act="copy">Copy</button><button class="btn" data-act="xlsx" title="Excel: author queries, internal notes and labels, and any added findings">Excel</button></div>
