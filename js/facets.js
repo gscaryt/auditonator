@@ -98,7 +98,8 @@ const Facets = (() => {
   }
 
   function type(f) {
-    if (f.pseudo || /typograph|typo\b/i.test(f.title)) return 'typo';
+    if (f.pseudo) return f.ptype || 'typo';
+    if (/typograph|typo\b/i.test(f.title)) return 'typo';
     const s = {};
     score(`${f.title} ${f.head || ''}`, 4, s);
     if (!/conditional|^[a-z]$/i.test(f.section || '')) score(f.section || '', 3, s);

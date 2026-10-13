@@ -3,6 +3,9 @@ const Parse = (() => {
   const HEAD_RE = /^(?:\*\*|#{2,5}\s+)\s*(⬛|🟥|🟨|🟩)?\s*(C?\d+)\.\s+(.+?)\s*(?:\*\*)?\s*$/u;
   const heading = l => { const m = l.match(/^(#{1,6})\s+(.*)$/); return m && { level: m[1].length, text: m[2].trim() }; };
   const CONDITIONAL = /\s*(?:—\s*)?\*Conditional\*\s*(?:—\s*)?/;
+  // the classes an audit reports as one bulleted list each, not as numbered findings
+  const LISTS = [['typo', /typo|grammat|spelling/i], ['misref', /misreferenc|cross-referenc/i], ['digit', /last digit|\bround(?:ing|ed)\b/i]];
+  const listKind = s => (LISTS.find(([, re]) => re.test(s)) || [])[0] || null;
 
   function splitTitle(raw) {
     let conditional = false;
@@ -33,7 +36,7 @@ const Parse = (() => {
     tops.forEach((t, i) => {
       if (!t.subs.length) return queries.push({ id: `q${queries.length + 1}`, num: t.num, text: t.text, orig: t.text });
       const gid = `g${i + 1}`;
-      groups[gid] = { num: t.num, header: t.text, kind: /typo|grammat/i.test(t.text) ? 'typo' : /misreferenc|cross-referenc/i.test(t.text) ? 'misref' : 'list' };
+      groups[gid] = { num: t.num, header: t.text, kind: listKind(t.text) || 'list' };
       t.subs.forEach((s, k) => {
         const m = s.text.match(/^([a-z])[.)]\s+(.*)$/);
         const text = m ? m[2] : s.text;
@@ -59,9 +62,19 @@ const Parse = (() => {
       meta: {
         ents: meta.r || '',
         types: (meta.i || '').split(/\s*[;,]\s*/).filter(Boolean),
-        queries: (meta.q || '').split(/\s*[;,]\s*|\s+and\s+/).map(s => s.replace(/^(?:Q|queries?)\s*/i, '').trim()).filter(Boolean)
+        queries: (meta.q || '').split(/\s*[;,]\s*|\s+and\s+/).map(s => s.replace(/^(?:Q|queries?)\s*/i, '').trim()).filter(Boolean).flatMap(span)
       }
     };
+  }
+
+  // "10a–10q" -> 10a … 10q, "20–22" -> 20, 21, 22
+  function span(s) {
+    const m = s.match(/^(\d+)([a-z])?\s*(?:[–—-]|to)\s*(\d+)?([a-z])?$/);
+    if (!m) return [s];
+    const [, a, x, b, y] = m, out = [];
+    if (x && y && (!b || b === a) && y >= x) for (let c = x.charCodeAt(0); c <= y.charCodeAt(0); c++) out.push(a + String.fromCharCode(c));
+    else if (!x && !y && b && +b > +a && b - a < 100) for (let n = +a; n <= +b; n++) out.push(String(n));
+    return out.length ? out : [s];
   }
 
   function parseAudit(text) {
@@ -70,13 +83,21 @@ const Parse = (() => {
     const out = {
       msid: (titleLine.match(/—\s*(\S+)/) || [])[1] || '',
       manuscript: (lines.find(l => /^\*\*Manuscript:?\*\*/.test(l)) || '').replace(/^\*\*Manuscript:?\*\*:?\s*/, ''),
-      findings: [], checked: '', queries: [], groups: {}
+      findings: [], checked: '', notChecked: '', lists: {}, queries: [], groups: {}
     };
     const qIdx = lines.findIndex(l => { const h = heading(l); return h && /author quer/i.test(h.text); });
     const cIdx = lines.findIndex(l => { const h = heading(l); return h && /checked but not raised/i.test(h.text); });
     const stop = Math.min(...[qIdx, cIdx, lines.length].filter(i => i >= 0));
     const lit = lines.slice(0, stop).some(l => { const m = l.match(HEAD_RE); return m && m[1]; });
-    let sec = '', cur = null;
+    const first = lines.findIndex(l => /^#{2,}\s/.test(l));
+    const nc = lines.slice(0, first < 0 ? stop : first).find(l => /^\**Not checked\b/i.test(l));
+    if (nc) out.notChecked = nc.replace(/^\**Not checked:?\**:?\s*/i, '').trim();
+    let sec = '', cur = null, lst = null;
+    const closeList = () => {
+      const body = lst ? lst.body.join('\n').trim() : '';
+      if (body) out.lists[lst.kind] = out.lists[lst.kind] ? { title: out.lists[lst.kind].title, body: out.lists[lst.kind].body + '\n\n' + body } : { title: lst.title, body };
+      lst = null;
+    };
     const close = () => {
       if (!cur) return;
       const s = splitMeta(cur.body);
@@ -88,17 +109,23 @@ const Parse = (() => {
       const l = lines[i];
       const m = l.match(HEAD_RE);
       if (m && (m[1] || !lit)) {
-        close();
+        close(); lst = null;
         const t = splitTitle(m[3]);
         cur = { id: m[2], colour: LIGHT[m[1]] || null, section: sec, ...t, body: [] };
         continue;
       }
       const h = heading(l);
-      if (h) { close(); if (!/part\s*\d|findings report|^findings$/i.test(h.text)) sec = h.text.replace(/^(?:[A-Z]|\d+)\.\s+/, ''); continue; }
+      if (h) {
+        close(); closeList();
+        if (!/part\s*\d|findings report|^findings$/i.test(h.text)) sec = h.text.replace(/^(?:[A-Z]|\d+)\.\s+/, '');
+        if (listKind(h.text)) lst = { kind: listKind(h.text), title: sec, body: [] };
+        continue;
+      }
       if (/^\s*---+\s*$/.test(l)) { close(); continue; }
       if (cur) cur.body.push(l);
+      else if (lst) lst.body.push(l);
     }
-    close();
+    close(); closeList();
     if (cIdx >= 0) out.checked = section(lines, cIdx).join('\n').trim();
     if (qIdx >= 0) Object.assign(out, parseQueries(section(lines, qIdx)));
     return out;
@@ -109,7 +136,7 @@ const Parse = (() => {
     const out = {
       msid: ((lines.find(l => /^#\s/.test(l)) || '').match(/—\s*(\S+)/) || [])[1] || '',
       title: (lines.find(l => /^\*[^*].*\*\s*$/.test(l)) || '').replace(/^\*|\*\s*$/g, ''),
-      claim: '', pattern: '', entries: [], typo: null
+      claim: '', pattern: '', entries: [], typo: null, lists: {}
     };
     let colour = null, block = null, inSummary = false, pending = [], para = false;
     const pattern = [];
@@ -144,7 +171,12 @@ const Parse = (() => {
         if (!brief) pending.push(e);
         continue;
       }
-      if (bullet && /typograph/i.test(s)) { out.typo = { colour, text: s.replace(/\*\*/g, '').trim() }; continue; }
+      const lk = bullet && (listKind(s.split(' — ')[0].slice(0, 60)) || (/typograph/i.test(s) ? 'typo' : null));
+      if (lk) {
+        out.lists[lk] = { colour, text: s.replace(/\*\*/g, '').trim() };
+        if (lk === 'typo') out.typo = out.lists[lk];
+        continue;
+      }
       if (bullet || /^\s*\|/.test(l)) continue;
       pending.forEach(e => e.brief += (e.brief ? ' ' : '') + l.trim());
       para = true;
@@ -182,7 +214,9 @@ const Parse = (() => {
   }
 
   // the audit's "Queries:" lines link first (first finding to claim a query keeps it; "19" claims all of group 19);
-  // whatever stays unlinked, and every query of an audit without those lines, is matched by wording
+  // whatever stays unlinked, and every query of an audit without those lines, is matched by wording;
+  // the queries of a class the audit lists without a number go to that class's own finding (T, M, R)
+  const OWN = { misref: 'M', digit: 'R' };
   function link(findings, queries, groups) {
     findings.forEach(f => (f.meta ? f.meta.queries : []).forEach(n => {
       const g = Object.keys(groups).find(k => groups[k].num === n);
@@ -190,7 +224,7 @@ const Parse = (() => {
     }));
   }
 
-  function match(findings, queries, groups) {
+  function match(findings, queries, groups, lists = {}) {
     if (!findings.length) return;
     link(findings, queries, groups);
     queries = queries.filter(q => !q.finding);
@@ -225,6 +259,7 @@ const Parse = (() => {
     Object.entries(groups).forEach(([gid, g]) => {
       const items = queries.filter(q => q.group === gid);
       if (g.kind === 'typo') return items.forEach(q => q.finding = typoF ? typoF.id : 'T');
+      if (OWN[g.kind] && lists[g.kind]) return items.forEach(q => q.finding = OWN[g.kind]);
       const S = items.map(score), sum = new Array(N).fill(0);
       S.forEach(r => r.forEach((v, j) => sum[j] += v));
       const G = sum.indexOf(Math.max(...sum));

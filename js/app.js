@@ -22,6 +22,7 @@
   // plots: the audit's finding plots, PNGs named F<finding numbers>_<panel>.png (F03_Fig3F.png, F03+07_Fig2A.png)
   let plots = [];
   const PLOT_NAME = /^F(\d+(?:\+\d+)*)_.+\.png$/i;
+  const PSEUDO = [['M', 'misref', 'Misreferences', 'Misreferences', 'label'], ['T', 'typo', 'Typos', 'Typographical issues', 'typo'], ['R', 'digit', 'Last digit', 'Values that differ in the last digit', 'conflict']];
   const plotsOf = id => plots.filter(p => p.ids.includes(String(id)));
   const dropPlots = () => { plots.forEach(p => URL.revokeObjectURL(p.url)); plots = []; };
   const SHEET_EXT = /\.(xlsx|xlsm|xls|ods|csv|tsv)$/i;
@@ -34,7 +35,7 @@
   const plain = s => s.replace(/<[^>]+>/g, '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/(^|[^*\w])\*(?!\s)(.+?)\*(?!\w)/g, '$1$2').replace(/`([^`]+)`/g, '$1');
   const fstate = id => st.findings[id] || (st.findings[id] = {});
   const status = id => (st.findings[id] || {}).s || null;
-  const fname = f => f.pseudo ? 'Typos' : `#${f.id}`;
+  const fname = f => f.pseudo ? f.tag : `#${f.id}`;
   const labelsOf = id => (st.findings[id] || {}).labels || [];
   const lcol = name => { const d = st.labels.find(l => l.name === name); return LCOL[d ? d.c % LCOL.length : 0]; };
   const custom = id => (st.custom || []).find(u => u.id === id);
@@ -54,7 +55,7 @@
 
   // ---------- state ----------
   function freshState(A) {
-    if (A) Parse.match(A.findings, A.queries, A.groups);
+    if (A) Parse.match(A.findings, A.queries, A.groups, A.lists);
     return { msid: A ? A.msid : '', findings: {}, queries: A ? A.queries.map(q => ({ ...q, include: true })) : [], groups: A ? A.groups : {}, labels: [], custom: [] };
   }
 
@@ -73,12 +74,15 @@
       id: u.id, custom: true, title: u.title.trim() || 'Untitled finding', location: '', section: 'Added', body: u.body || '',
       doc: 2e5 + i, rank: 2e4 + i, with: [], colour: u.colour || 'none', head: '', brief: plain(u.body || '').replace(/^[#>*\-\s]+/gm, '').replace(/\s+/g, ' ').trim().slice(0, 300)
     }));
-    if (st.queries.some(q => q.finding === 'T') || (C && C.typo)) {
-      map.set('T', {
-        id: 'T', pseudo: true, title: 'Typographical issues', location: '', section: '', body: '', doc: 1e5, rank: 1e4 - 1, with: [],
-        colour: C && C.typo ? C.typo.colour : 'green', head: '', brief: C && C.typo ? C.typo.text.replace(/^[^—]*—\s*/, '') : ''
+    // the classes the audit lists without a number: one finding each, holding the audit's list and the triage line
+    PSEUDO.forEach(([id, kind, tag, title, ptype], i) => {
+      const L = A && A.lists[kind], T = C && C.lists[kind];
+      if (!st.queries.some(q => q.finding === id) && !L && !(id === 'T' && T)) return;
+      map.set(id, {
+        id, pseudo: true, tag, ptype, title: (L && L.title) || title, location: '', section: '', body: L ? L.body : '', doc: 1e5 + i, rank: 1e4 - 3 + i, with: [],
+        colour: T ? T.colour : 'green', head: '', brief: T ? T.text.replace(/^[^—]*—\s*/, '') : ''
       });
-    }
+    });
     const all = [...map.values()];
     all.forEach(f => {
       f.colour0 = f.colour;
@@ -713,6 +717,7 @@
       </article>`;
     });
     if (!v.length) html += `<div class="none">No findings match the filters.${filtering() ? ' <button class="lnk" data-act="clearfilters">Clear filters</button>' : ''}</div>`;
+    if (model.A && model.A.notChecked) html += `<details class="claim checked"><summary>Not checked</summary><div class="md">${MD.render(model.A.notChecked)}</div></details>`;
     if (model.A && model.A.checked) html += `<details class="claim checked"><summary>Checked but not raised</summary><div class="md">${MD.render(model.A.checked)}</div></details>`;
     $('#cards').innerHTML = html;
   }
@@ -1119,7 +1124,7 @@
       const external = parts.filter(o => o.s !== s).flatMap(o => o.s.ranges.filter(([r0, c0, r1, c1]) => (r1 - r0 + 1) * (c1 - c0 + 1) <= 5000).map(r => ({ sheet: o.s.sheet, range: r, vals: vals(o.d, r) })));
       return { book: p.name, sheet: s.sheet, d, paint: Cells.paint(d, s.ranges, s.rects, external, s.sheet) };
     });
-    const tag = f.pseudo ? 'Typos' : `F${f.id}`;
+    const tag = f.pseudo ? f.tag.replace(/\s+/g, '_') : `F${f.id}`;
     download(Export.workbook(out, { finding: `${fname(f)} — ${plain(f.head || f.title)}`, msid: model.msid }), `${model.msid || 'audit'}-${tag}-Highlighted_cells.xlsx`);
     toast(`Exported ${out.length} sheet${out.length === 1 ? '' : 's'} for ${fname(f)}`);
   }
