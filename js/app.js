@@ -1,3 +1,4 @@
+// pipeline 1.0.1 | file changed 2026-10-14
 // Auditonator — review of a manuscript consistency audit. By Gustavo Tontini.
 (() => {
   const $ = s => document.querySelector(s);
@@ -11,6 +12,24 @@
     green: 'minor; correct version evident',
     none: 'not in the triage'
   };
+  // an audit ranked on two axes: the colour is what the finding says about the data record, the position how close it sits to the central claim
+  const CDESC2 = {
+    black: 'the data cannot be what the paper says they are',
+    red: 'record impossible or unsupported, no innocent source in the files',
+    yellow: 'reporting wrong; the record looks sound',
+    green: 'presentation only',
+    none: 'not in the triage'
+  };
+  const POS = ['central', 'supporting', 'peripheral'];
+  const PNAME = { central: 'Central', supporting: 'Supporting', peripheral: 'Peripheral' };
+  const PDOTS = { central: '●●●', supporting: '●●○', peripheral: '●○○' };
+  const PDESC = {
+    central: 'on the main evidence for the central claim, and could change what it shows',
+    supporting: 'on evidence the paper uses to back the central claim',
+    peripheral: 'nothing the central claim rests on'
+  };
+  const cdesc = c => (model && model.twoAxis ? CDESC2 : CDESC)[c];
+  const posTag = (f, name) => f.pos ? `<span class="pos" title="${PNAME[f.pos]}: ${PDESC[f.pos]}">${PDOTS[f.pos]}${name ? ' ' + PNAME[f.pos] : ''}</span>` : '';
   const KEY = 'auditonator:last';
   // label colours: calm hues kept clear of the triage colours
   const LCOL = ['#3563d9', '#0e8f8a', '#7a4fd6', '#c03b8f', '#8a6239', '#5b6678', '#0a87b5', '#4c4fbf'];
@@ -30,7 +49,7 @@
   const isText = p => p.kind === 'pdf' || p.kind === 'docx';
   const freeDoc = p => { if (p.url) URL.revokeObjectURL(p.url); if (p.doc) p.doc.then(d => d.urls.forEach(u => URL.revokeObjectURL(u)), () => { }); };
   const VIEW_ACCEPT = '.pdf,.docx,.xlsx,.xlsm,.xls,.ods,.csv,.tsv';
-  const ui = { tab: 'findings', sel: null, colours: new Set(), status: 'all', q: '', ents: new Set(), entMode: 'any', types: new Set(), labels: new Set(), pop: null, open: false, edit: null, pdf: false, claimOpen: false };
+  const ui = { tab: 'findings', sel: null, colours: new Set(), status: 'all', q: '', ents: new Set(), entMode: 'any', types: new Set(), labels: new Set(), pos: new Set(), pop: null, open: false, edit: null, pdf: false, claimOpen: false, axesOpen: true };
 
   const plain = s => s.replace(/<[^>]+>/g, '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/(^|[^*\w])\*(?!\s)(.+?)\*(?!\w)/g, '$1$2').replace(/`([^`]+)`/g, '$1');
   const fstate = id => st.findings[id] || (st.findings[id] = {});
@@ -66,7 +85,7 @@
     (A ? A.findings : []).forEach((f, i) => map.set(f.id, { ...f, doc: i, colour: f.colour || 'none', brief: '', head: '', rank: 1e4, with: [] }));
     if (C) C.entries.forEach((e, r) => e.ids.forEach(id => {
       const f = map.get(id) || { id, title: e.head || e.brief, location: '', section: '', body: '', doc: 1e3 + r };
-      map.set(id, Object.assign(f, { colour: e.colour, brief: e.brief, head: e.head, rank: r, with: e.ids.filter(x => x !== id), conditional: f.conditional || e.conditional }));
+      map.set(id, Object.assign(f, { colour: e.colour, pos: e.pos || f.pos || null, brief: e.brief, head: e.head, rank: r, with: e.ids.filter(x => x !== id), conditional: f.conditional || e.conditional }));
     }));
     st.labels = st.labels || []; st.custom = st.custom || [];
     // findings added in the app: kept in the saved work, never in the audit file
@@ -80,10 +99,14 @@
       if (!st.queries.some(q => q.finding === id) && !L && !(id === 'T' && T)) return;
       map.set(id, {
         id, pseudo: true, tag, ptype, title: (L && L.title) || title, location: '', section: '', body: L ? L.body : '', doc: 1e5 + i, rank: 1e4 - 3 + i, with: [],
-        colour: T ? T.colour : 'green', head: '', brief: T ? T.text.replace(/^[^—]*—\s*/, '') : ''
+        colour: T ? T.colour : 'green', pos: (T && T.pos) || null, head: '', brief: T ? T.text.replace(/^[^—]*—\s*/, '') : ''
       });
     });
     const all = [...map.values()];
+    const twoAxis = all.some(f => f.pos);
+    // the unnumbered classes are presentation only: peripheral unless the triage says otherwise
+    if (twoAxis) all.forEach(f => { if (f.pseudo && !f.pos) f.pos = 'peripheral'; });
+    const posIdx = f => f.pos ? POS.indexOf(f.pos) : POS.length;
     all.forEach(f => {
       f.colour0 = f.colour;
       const o = (st.findings[f.id] || {}).colour;
@@ -96,10 +119,10 @@
       f.ents = Facets.entities(u ? u.ents || [u.title, u.body].join('\n') : f.meta && f.meta.ents ? f.meta.ents : [f.title, f.location, f.head, f.brief, f.body, ...qs].join('\n'));
     });
     model = {
-      A, C, map,
+      A, C, map, twoAxis, run: (A && A.run) || {},
       msid: (A && A.msid) || (C && C.msid) || st.msid || '',
       title: (C && C.title) || (A && A.manuscript) || '',
-      order: all.slice().sort((a, b) => COLOURS.indexOf(a.colour) - COLOURS.indexOf(b.colour) || a.rank - b.rank || a.doc - b.doc),
+      order: all.slice().sort((a, b) => COLOURS.indexOf(a.colour) - COLOURS.indexOf(b.colour) || posIdx(a) - posIdx(b) || a.rank - b.rank || a.doc - b.doc),
       doc: all.slice().sort((a, b) => a.doc - b.doc)
     };
     if (!map.has(ui.sel)) ui.sel = model.order.length ? model.order[0].id : null;
@@ -153,7 +176,8 @@
       if (!/\.pdf$/i.test(name) && !DOCX_EXT.test(name) && !SHEET_EXT.test(name)) return false;
       // the audit's own Word copy and the correspondence are not what the findings cite
       if (/-Audit_|rebuttal|cover_letter|reviewer_reports|response/i.test(name)) return false;
-      return !(/\.xls$/i.test(name) && stems.has(name.toLowerCase() + 'x'));
+      // a file with a converted .xlsx beside it is shown once, as the workbook
+      return !(/\.(xls|csv|tsv)$/i.test(name) && stems.has(name.toLowerCase().replace(/\.[^.]+$/, '.xlsx')));
     }).map(it => it.get()));
   }
 
@@ -274,7 +298,7 @@
   async function save(asNew) {
     if (!model) return;
     const data = JSON.stringify(snapshot());
-    const name = `${model.msid || 'audit'}-Auditonator.json`;
+    const name = `${model.msid || 'audit'}-Auditonator${runTag()}.json`;
     if (window.showSaveFilePicker) {
       try {
         if (!fileHandle || asNew) fileHandle = await showSaveFilePicker({ suggestedName: name, types: [{ description: 'Auditonator work', accept: { 'application/json': ['.json'] } }] });
@@ -287,6 +311,9 @@
     dirty = false;
     toast(`Saved ${fileHandle ? fileHandle.name : name}`);
   }
+
+  // "_v1-r2-20261013" when the audit file is named for its run
+  const runTag = () => { const m = src.auditName.match(/-Audit_(v\d+-r\d+-\d{8})\./); return m ? '_' + m[1] : ''; };
 
   function exportItems() {
     const out = [], groups = {};
@@ -331,7 +358,8 @@
         i + 1,
         o.header ? `${plain(o.header)}\n${o.items.map(q => `• ${plain(q.text)}`).join('\n')}` : plain(o.items[0].text),
         fs.map(fname).join(', '),
-        [...new Set(fs.map(f => CNAME[f.colour]))].join(', ')
+        [...new Set(fs.map(f => CNAME[f.colour]))].join(', '),
+        [...new Set(fs.map(f => PNAME[f.pos]).filter(Boolean))].join(', ')
       ];
     });
     const nrows = notes.map(f => [
@@ -339,6 +367,7 @@
       plain(f.head || f.title),
       reranked(f) ? { v: CNAME[f.colour], hl: true } : CNAME[f.colour],
       f.custom ? 'Added' : CNAME[f.colour0],
+      PNAME[f.pos] || '',
       STATUS[status(f.id)] || 'Open',
       labelsOf(f.id).join(', '),
       ((st.findings[f.id] || {}).note || '').trim()
@@ -349,10 +378,10 @@
       plain(f.body), STATUS[status(f.id)] || 'Open'
     ]);
     download(XLSX.build([
-      { name: 'Author queries', header: ['No.', 'Author query', 'Finding', 'Triage'], rows, widths: [6, 110, 12, 10] },
-      { name: 'Internal notes', header: ['Finding', 'Title', 'Severity', 'Triage', 'Status', 'Labels', 'Note'], rows: nrows, widths: [9, 50, 10, 10, 11, 22, 80] },
+      { name: 'Author queries', header: ['No.', 'Author query', 'Finding', 'Triage', 'Position'], rows, widths: [6, 110, 12, 10, 12] },
+      { name: 'Internal notes', header: ['Finding', 'Title', 'Severity', 'Triage', 'Position', 'Status', 'Labels', 'Note'], rows: nrows, widths: [9, 50, 10, 10, 12, 11, 22, 80] },
       ...(arows.length ? [{ name: 'Added findings', header: ['Finding', 'Title', 'Severity', 'Issue type', 'Related entities', 'Description', 'Status'], rows: arows, widths: [9, 50, 10, 20, 30, 90, 11] }] : [])
-    ]), `${model.msid || 'audit'}-Author_Queries.xlsx`);
+    ]), `${model.msid || 'audit'}-Author_Queries${runTag()}.xlsx`);
     toast(`Exported ${items.length} quer${items.length === 1 ? 'y' : 'ies'} · ${notes.length} note${notes.length === 1 ? '' : 's'}${added.length ? ` · ${added.length} added finding${added.length === 1 ? '' : 's'}` : ''}`);
   }
 
@@ -480,7 +509,8 @@
   function passes(f, skip) {
     const q = ui.q.trim().toLowerCase();
     const ents = [...ui.ents];
-    return (skip === 'colour' || !ui.colours.size || ui.colours.has(f.colour)) &&
+    return (skip === 'colour' || skip === 'axes' || !ui.colours.size || ui.colours.has(f.colour)) &&
+      (skip === 'pos' || skip === 'axes' || !ui.pos.size || ui.pos.has(f.pos)) &&
       (ui.status === 'all' || (ui.status === 'open' ? !status(f.id) : status(f.id) === ui.status)) &&
       (skip === 'type' || !ui.types.size || f.types.some(t => ui.types.has(t))) &&
       (skip === 'entity' || !ents.length || (ui.entMode === 'all' ? ents.every(k => f.ents.includes(k)) : ents.some(k => f.ents.includes(k)))) &&
@@ -488,7 +518,7 @@
       (!q || `${f.id} ${f.title} ${f.head} ${f.brief} ${f.location} ${f.body}`.toLowerCase().includes(q));
   }
   const visible = () => model.order.filter(f => passes(f));
-  const filtering = () => ui.ents.size || ui.types.size || ui.labels.size || ui.colours.size || ui.status !== 'all' || ui.q.trim();
+  const filtering = () => ui.ents.size || ui.types.size || ui.labels.size || ui.colours.size || ui.pos.size || ui.status !== 'all' || ui.q.trim();
 
   function select(id, scroll = true) {
     if (ui.edit && ui.edit !== id) finishEdit();
@@ -572,7 +602,9 @@
     $('#mstitle').innerHTML = model ? inline(model.title) : '';
     const chip = (ok, label, name) => `<span class="fchip ${ok ? 'ok' : ''}" title="${esc(name || 'not loaded')}">${label}</span>`;
     const pdfOnly = pdfs.filter(isText), word = pdfOnly.some(p => p.kind === 'docx') ? 'Docs' : 'PDF', sheets = pdfs.filter(p => p.kind === 'sheet');
-    $('#files').innerHTML = model ? chip(src.audit, 'Audit', src.auditName) + chip(src.critical, 'Triage', src.criticalName)
+    const run = model ? model.run : {};
+    $('#files').innerHTML = model ? (run.run ? `<span class="fchip" title="${esc([run.model && 'Model: ' + run.model, run.pipeline && 'Pipeline version: ' + run.pipeline].filter(Boolean).join('\n'))}">Run ${esc(run.run)}</span>` : '')
+      + chip(src.audit, 'Audit', src.auditName) + chip(src.critical, 'Triage', src.criticalName)
       + chip(pdfOnly.length, pdfOnly.length > 1 ? `${word} ×${pdfOnly.length}` : word, pdfOnly.map(p => p.name).join(', '))
       + (sheets.length ? chip(1, sheets.length > 1 ? `Sheets ×${sheets.length}` : 'Sheet', sheets.map(p => p.name).join(', ')) : '')
       + chip(plots.length, plots.length > 1 ? `Plots ×${plots.length}` : 'Plots', plots.map(p => p.name).join(', ') || 'not loaded; findings read the same without them')
@@ -620,7 +652,7 @@
     model.order.filter(f => passes(f, 'colour')).forEach(f => counts[f.colour] = (counts[f.colour] || 0) + 1);
     const present = new Set(model.order.map(f => f.colour));
     $('#colourFilter').innerHTML = COLOURS.filter(c => present.has(c) || c !== 'none').map(c =>
-      `<button class="cf c-${c} ${ui.colours.has(c) ? 'on' : ''} ${counts[c] ? '' : 'zero'}" data-colour="${c}" title="${CNAME[c]} — ${CDESC[c]}"><i></i>${counts[c] || 0}</button>`).join('');
+      `<button class="cf c-${c} ${ui.colours.has(c) ? 'on' : ''} ${counts[c] ? '' : 'zero'}" data-colour="${c}" title="${CNAME[c]} — ${cdesc(c)}"><i></i>${counts[c] || 0}</button>`).join('');
     document.querySelectorAll('#statusFilter button').forEach(b => b.classList.toggle('on', b.dataset.status === ui.status));
 
     const btn = (dim, name, set, lab) => {
@@ -645,6 +677,7 @@
 
     const act = $('#activeFilters');
     const chips = [...ui.ents].sort((a, b) => Facets.sortKey(a) - Facets.sortKey(b)).map(k => `<button class="af" data-ent="${k}" title="Remove">${esc(entLabel(k))}<i>✕</i></button>`)
+      .concat(POS.filter(p => ui.pos.has(p)).map(p => `<button class="af" data-pos="${p}" title="Remove">${PDOTS[p]} ${PNAME[p]}<i>✕</i></button>`))
       .concat([...ui.types].map(t => `<button class="af ty" data-type="${t}" title="Remove">${Facets.TYPE_LABEL[t]}<i>✕</i></button>`))
       .concat([...ui.labels].map(l => `<button class="af lbf" data-label="${esc(l)}" style="--lc:${lcol(l)}" title="Remove"><b></b>${esc(l)}<i>✕</i></button>`));
     act.hidden = !filtering();
@@ -694,23 +727,36 @@
     return `<div class="ph"><b>Type of issue</b><span class="grow"></span>${ui.types.size ? '<button class="lnk" data-act="cleartypes">Clear</button>' : ''}</div><div class="pb tl">${rows}</div><p class="pn">${model.A && model.A.findings.some(f => f.meta) ? 'As given in the audit.' : 'Assigned automatically from each finding\'s wording.'}</p>`;
   }
 
+  // the triage's Summary grid, drawn: colour rows by position columns; a cell, a row or a column filters the board
+  function axisGrid() {
+    const base = model.order.filter(f => passes(f, 'axes'));
+    const only = (c, p) => ui.colours.size === 1 && ui.colours.has(c) && ui.pos.size === 1 && ui.pos.has(p);
+    const rows = COLOURS.slice(0, 4).map(c => `<tr class="c-${c}"><th><button class="${ui.colours.has(c) ? 'on' : ''}" data-colour="${c}" title="${CNAME[c]} — ${cdesc(c)}"><i></i>${CNAME[c]}</button></th>${POS.map(p => {
+      const n = base.filter(f => f.colour === c && f.pos === p).length;
+      return `<td><button class="${n ? '' : 'zero'} ${only(c, p) ? 'on' : ''}" data-cell="${c}:${p}" ${n ? '' : 'disabled'} title="${CNAME[c]}, ${PNAME[p]}">${n}</button></td>`;
+    }).join('')}</tr>`).join('');
+    return `<details class="claim axes" ${ui.axesOpen ? 'open' : ''}><summary>Colour and position</summary><table><tr><th></th>${POS.map(p => `<th><button class="${ui.pos.has(p) ? 'on' : ''}" data-pos="${p}" title="${PNAME[p]}: ${PDESC[p]}"><span>${PDOTS[p]}</span> ${PNAME[p]}</button></th>`).join('')}</tr>${rows}</table></details>`;
+  }
+
   function renderCards() {
     renderFilters();
     const C = model.C;
     let html = '';
-    if (C && (C.claim || C.pattern)) html += `<details class="claim" ${ui.claimOpen ? 'open' : ''}><summary>Central claim</summary><div class="md">${MD.render(C.claim)}${C.pattern ? MD.render(C.pattern) : ''}</div></details>`;
+    const claim = C && (C.claim || C.pattern) ? `<details class="claim main" ${ui.claimOpen ? 'open' : ''}><summary>Central claim</summary><div class="md">${MD.render(C.claim)}${C.pattern ? MD.render(C.pattern) : ''}</div></details>` : '';
+    const axes = model.twoAxis ? axisGrid() : '';
+    if (axes || claim) html += `<div class="lead">${axes}${claim}</div>`;
     const v = visible();
     let colour = null;
     v.forEach(f => {
       if (f.colour !== colour) {
         colour = f.colour;
-        html += `<div class="grp c-${colour}"><i></i><b>${CNAME[colour]}</b><span>${CDESC[colour]}</span><em>${v.filter(x => x.colour === colour).length}</em></div>`;
+        html += `<div class="grp c-${colour}"><i></i><b>${CNAME[colour]}</b><span>${cdesc(colour)}</span><em>${v.filter(x => x.colour === colour).length}</em></div>`;
       }
       const s = status(f.id);
       const nq = st.queries.filter(q => q.finding === f.id).length;
       const brief = f.brief || (f.head ? '' : f.location);
       html += `<article class="card c-${f.colour} ${s ? 'is-' + s : ''} ${ui.sel === f.id ? 'is-sel' : ''}" data-id="${esc(f.id)}">
-        <div class="cm"><label class="chk" title="Confirm (C)"><input type="checkbox" data-act="confirm" ${s === 'confirmed' ? 'checked' : ''}></label><span class="fid">${fname(f)}</span>${f.conditional ? '<span class="tag">Conditional</span>' : ''}${f.with.length ? `<span class="tag">with #${f.with.join(', #')}</span>` : ''}${reranked(f) ? `<span class="tag sev" title="Severity changed from the triage">${CNAME[f.colour0]}→${CNAME[f.colour]}</span>` : ''}${f.custom ? '<span class="tag add" title="Added in the Auditonator; not in the audit">Added</span>' : ''}${(st.findings[f.id] || {}).note ? '<span class="tag note">Note</span>' : ''}<span class="qn" title="Author queries">${nq}&thinsp;Q</span><button class="x" data-act="dismiss" title="Dismiss (X)">✕</button></div>
+        <div class="cm"><label class="chk" title="Confirm (C)"><input type="checkbox" data-act="confirm" ${s === 'confirmed' ? 'checked' : ''}></label><span class="fid">${fname(f)}</span>${posTag(f)}${f.conditional ? '<span class="tag">Conditional</span>' : ''}${f.with.length ? `<span class="tag">with #${f.with.join(', #')}</span>` : ''}${reranked(f) ? `<span class="tag sev" title="Severity changed from the triage">${CNAME[f.colour0]}→${CNAME[f.colour]}</span>` : ''}${f.custom ? '<span class="tag add" title="Added in the Auditonator; not in the audit">Added</span>' : ''}${(st.findings[f.id] || {}).note ? '<span class="tag note">Note</span>' : ''}<span class="qn" title="Author queries">${nq}&thinsp;Q</span><button class="x" data-act="dismiss" title="Dismiss (X)">✕</button></div>
         <h3>${inline(f.head || f.title)}</h3>
         ${brief ? `<p>${inline(brief)}</p>` : ''}
         <div class="cf-row">${labelChips(f.id)}${typeChips(f)}${cardEnts(f)}</div>
@@ -756,7 +802,7 @@
     el.innerHTML = `
       <div class="d-bar c-${f.colour}">
         <select class="pill" data-act="sev" title="Severity (1–4 · 0 reverts to the triage)">${COLOURS.filter(c => c !== 'none' || f.colour0 === 'none').map(c => `<option value="${c}" ${c === f.colour ? 'selected' : ''}>${CNAME[c]}</option>`).join('')}</select>
-        ${reranked(f) ? `<button class="rev" data-act="sevreset" title="Revert to the triage colour (0)">was ${CNAME[f.colour0]} ↺</button>` : ''}<span class="fid">${fname(f)}</span>
+        ${reranked(f) ? `<button class="rev" data-act="sevreset" title="Revert to the triage colour (0)">was ${CNAME[f.colour0]} ↺</button>` : ''}<span class="fid">${fname(f)}</span>${posTag(f, true)}
         ${f.conditional ? '<span class="tag">Conditional</span>' : ''}
         <span class="sec">${inline(f.section || '')}</span>
         <span class="grow"></span>
@@ -1166,7 +1212,7 @@
     if (e.target.closest('.chk') && e.target.tagName !== 'INPUT') return;
     if (ui.pop && !e.target.closest('.fdrop')) closePop();
     if (e.target.id === 'modal') return closeDetail();
-    const t = e.target.closest('[data-act],[data-colour],[data-status],[data-tab],[data-goto],[data-pdf],[data-sheet-i],[data-jump],[data-pop],[data-ent],[data-type],[data-entmode],[data-label],[data-lcol],[data-ldel],[data-lrm],[data-edtype],[data-md],a.pg,.card');
+    const t = e.target.closest('[data-act],[data-cell],[data-pos],[data-colour],[data-status],[data-tab],[data-goto],[data-pdf],[data-sheet-i],[data-jump],[data-pop],[data-ent],[data-type],[data-entmode],[data-label],[data-lcol],[data-ldel],[data-lrm],[data-edtype],[data-md],a.pg,.card');
     if (!t) return;
     const act = t.dataset.act;
     const card = t.closest('.card');
@@ -1208,10 +1254,18 @@
     if (act === 'confirmall') return confirmAll();
     if (act === 'undoconfirmall') return undoConfirmAll();
     if (act === 'clearfilters') {
-      ui.ents.clear(); ui.types.clear(); ui.labels.clear(); ui.colours.clear(); ui.status = 'all'; ui.q = ''; $('#search').value = '';
+      ui.ents.clear(); ui.types.clear(); ui.labels.clear(); ui.colours.clear(); ui.pos.clear(); ui.status = 'all'; ui.q = ''; $('#search').value = '';
       renderCards(); return renderDetail();
     }
     if (act === 'closedetail') return closeDetail();
+    if (t.dataset.cell) {
+      const [c, p] = t.dataset.cell.split(':');
+      const only = ui.colours.size === 1 && ui.colours.has(c) && ui.pos.size === 1 && ui.pos.has(p);
+      ui.colours.clear(); ui.pos.clear();
+      if (!only) { ui.colours.add(c); ui.pos.add(p); }
+      renderCards(); return renderDetail();
+    }
+    if (t.dataset.pos) { toggle(ui.pos, t.dataset.pos); renderCards(); return renderDetail(); }
     if (t.dataset.colour) { toggle(ui.colours, t.dataset.colour); renderCards(); return renderDetail(); }
     if (t.dataset.status) { ui.status = t.dataset.status; renderCards(); return renderDetail(); }
     if (t.dataset.tab) {
@@ -1273,7 +1327,7 @@
     }
   });
 
-  document.addEventListener('toggle', e => { if (e.target.matches('details.claim:not(.checked)')) ui.claimOpen = e.target.open; }, true);
+  document.addEventListener('toggle', e => { if (e.target.matches('details.claim.main')) ui.claimOpen = e.target.open; else if (e.target.matches('details.axes')) ui.axesOpen = e.target.open; }, true);
 
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); return save(e.shiftKey); }

@@ -1,6 +1,12 @@
+// pipeline 1.0.1 | file changed 2026-10-13
 const Parse = (() => {
   const LIGHT = { '⬛': 'black', '🟥': 'red', '🟨': 'yellow', '🟩': 'green' };
-  const HEAD_RE = /^(?:\*\*|#{2,5}\s+)\s*(⬛|🟥|🟨|🟩)?\s*(C?\d+)\.\s+(.+?)\s*(?:\*\*)?\s*$/u;
+  // position on the second triage axis: the dots a finding heading or a triage entry carries
+  const DOTS = { '●●●': 'central', '●●○': 'supporting', '●○○': 'peripheral' };
+  const POS_RE = /\s*(?:—\s*)?(●●●|●●○|●○○)(?:\s*(?:Central|Supporting|Peripheral))?\s*(?:—\s*)?/;
+  const HEAD_RE = /^(?:\*\*|#{2,5}\s+)\s*(⬛|🟥|🟨|🟩)?\s*(●●●|●●○|●○○)?\s*(C?\d+)\.\s+(.+?)\s*(?:\*\*)?\s*$/u;
+  // "Finding 3 — ●●● Central — statement": the position, and the text without it
+  const takePos = s => { const m = s.match(POS_RE); return m ? { pos: DOTS[m[1]], text: s.replace(POS_RE, ' — ').replace(/^\s*—\s*|\s*—\s*$/g, '').trim() } : { pos: null, text: s }; };
   const heading = l => { const m = l.match(/^(#{1,6})\s+(.*)$/); return m && { level: m[1].length, text: m[2].trim() }; };
   const CONDITIONAL = /\s*(?:—\s*)?\*Conditional\*\s*(?:—\s*)?/;
   // the classes an audit reports as one bulleted list each, not as numbered findings
@@ -83,7 +89,7 @@ const Parse = (() => {
     const out = {
       msid: (titleLine.match(/—\s*(\S+)/) || [])[1] || '',
       manuscript: (lines.find(l => /^\*\*Manuscript:?\*\*/.test(l)) || '').replace(/^\*\*Manuscript:?\*\*:?\s*/, ''),
-      findings: [], checked: '', notChecked: '', lists: {}, queries: [], groups: {}
+      findings: [], checked: '', notChecked: '', run: {}, lists: {}, queries: [], groups: {}
     };
     const qIdx = lines.findIndex(l => { const h = heading(l); return h && /author quer/i.test(h.text); });
     const cIdx = lines.findIndex(l => { const h = heading(l); return h && /checked but not raised/i.test(h.text); });
@@ -92,6 +98,8 @@ const Parse = (() => {
     const first = lines.findIndex(l => /^#{2,}\s/.test(l));
     const nc = lines.slice(0, first < 0 ? stop : first).find(l => /^\**Not checked\b/i.test(l));
     if (nc) out.notChecked = nc.replace(/^\**Not checked:?\**:?\s*/i, '').trim();
+    // the header lines of the run: Model, Pipeline version, Run
+    lines.slice(0, first < 0 ? stop : first).forEach(l => { const h = l.match(/^\**(Model|Pipeline version|Run):\**\s*(.+?)\s*$/); if (h) out.run[h[1].toLowerCase().split(' ')[0]] = h[2]; });
     let sec = '', cur = null, lst = null;
     const closeList = () => {
       const body = lst ? lst.body.join('\n').trim() : '';
@@ -110,14 +118,14 @@ const Parse = (() => {
       const m = l.match(HEAD_RE);
       if (m && (m[1] || !lit)) {
         close(); lst = null;
-        const t = splitTitle(m[3]);
-        cur = { id: m[2], colour: LIGHT[m[1]] || null, section: sec, ...t, body: [] };
+        const t = splitTitle(m[4]);
+        cur = { id: m[3], colour: LIGHT[m[1]] || null, pos: DOTS[m[2]] || null, section: sec, ...t, body: [] };
         continue;
       }
       const h = heading(l);
       if (h) {
         close(); closeList();
-        if (!/part\s*\d|findings report|^findings$/i.test(h.text)) sec = h.text.replace(/^(?:[A-Z]|\d+)\.\s+/, '');
+        if (h.level > 1 && !/part\s*\d|findings report|^findings$/i.test(h.text)) sec = h.text.replace(/^(?:[A-Z]|\d+)\.\s+/, '');
         if (listKind(h.text)) lst = { kind: listKind(h.text), title: sec, body: [] };
         continue;
       }
@@ -163,17 +171,20 @@ const Parse = (() => {
         const k = inner.indexOf(' — ');
         let head = k > 0 ? inner.slice(k + 3) : '';
         let brief = bm[2].replace(/^—\s*/, '');
+        const ph = takePos(head), pb = takePos(brief);
+        head = ph.text; brief = pb.text;
         const conditional = CONDITIONAL.test(head) || CONDITIONAL.test(brief);
         head = head.replace(CONDITIONAL, ' ').replace(/^\s*—\s*/, '').trim();
         brief = brief.replace(CONDITIONAL, ' ').replace(/^\s*—\s*/, '').trim();
-        const e = { colour, ids: (k > 0 ? inner.slice(0, k) : inner).replace(/^Findings?\s+/, '').match(/C?\d+/g) || [], head, brief, conditional };
+        const e = { colour, pos: ph.pos || pb.pos, ids: (k > 0 ? inner.slice(0, k) : inner).replace(/^Findings?\s+/, '').match(/C?\d+/g) || [], head, brief, conditional };
         out.entries.push(e);
         if (!brief) pending.push(e);
         continue;
       }
       const lk = bullet && (listKind(s.split(' — ')[0].slice(0, 60)) || (/typograph/i.test(s) ? 'typo' : null));
       if (lk) {
-        out.lists[lk] = { colour, text: s.replace(/\*\*/g, '').trim() };
+        const lp = takePos(s.replace(/\*\*/g, '').trim());
+        out.lists[lk] = { colour, pos: lp.pos, text: lp.text };
         if (lk === 'typo') out.typo = out.lists[lk];
         continue;
       }

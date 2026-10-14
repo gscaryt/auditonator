@@ -1,3 +1,4 @@
+/* pipeline 1.0.1 | file changed 2026-10-14 */
 :root {
   --bg: #f4f5f8;
   --panel: #ffffff;
@@ -183,7 +184,23 @@ main.with-pdf { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.15fr); }
 #search:focus, textarea:focus, .qt:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 
 .cards { flex: 1; overflow: auto; padding: 6px 14px 28px; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 10px; align-content: start; }
-.cards > .grp, .cards > details, .cards > .none { grid-column: 1 / -1; }
+.cards > .grp, .cards > details, .cards > .none, .cards > .lead { grid-column: 1 / -1; }
+.pos { font-size: 9.5px; letter-spacing: 1px; color: var(--ink-2); white-space: nowrap; }
+.d-bar .pos { font-size: 12px; letter-spacing: 0; font-weight: 600; }
+.lead { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.lead > .axes { flex: none; max-width: 100%; overflow-x: auto; }
+.lead > .main { flex: 1; min-width: min(100%, 220px); }
+.axes table { border-collapse: separate; border-spacing: 3px; margin: 5px 7px 7px; }
+.axes th, .axes td { padding: 0; font-weight: 600; }
+.axes button { width: 100%; height: 26px; padding: 0 9px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--ink-2); font: inherit; font-size: 11.5px; font-weight: 600; white-space: nowrap; display: flex; align-items: center; gap: 5px; }
+.axes th button:hover, .axes th button.on { border-color: var(--line-2); background: var(--sunk); color: var(--ink); }
+.axes tr > th:first-child button i { width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+.axes .c-black th button i { box-shadow: inset 0 0 0 1px var(--line-2); }
+.axes th button span { font-size: 9.5px; letter-spacing: 1px; }
+.axes td button { justify-content: center; min-width: 64px; background: var(--cs); color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; }
+.axes td button:hover, .axes td button.on { border-color: var(--c); }
+.axes td button.on { box-shadow: inset 0 0 0 1px var(--c); }
+.axes td button.zero { background: var(--sunk); color: var(--muted); opacity: .6; cursor: default; }
 .grp { display: flex; align-items: baseline; gap: 7px; padding: 12px 4px 2px; position: sticky; top: -6px; background: var(--bg); z-index: 2; }
 .grp i { width: 10px; height: 10px; border-radius: 3px; background: var(--c); align-self: center; }
 .grp b { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
