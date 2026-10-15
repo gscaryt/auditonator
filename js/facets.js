@@ -1,4 +1,4 @@
-// pipeline 1.0.1 | file changed 2026-10-12
+// pipeline 1.3.0 | file changed 2026-10-15
 const Facets = (() => {
   // ---------- entities: figures, tables, notes, source data, text sections ----------
   const REF = /\b(?:(Supplementary(?:\s+Information)?|Suppl?\.|SI|Extended\s+Data|ED)\s+)?(Fig(?:ure)?s?\.?|Tables?|Notes?|Data)\s*(S?\d{1,3}[A-Za-z]{0,2}(?:\s*(?:,|and|&|–|-|to)\s*(?:S?\d{1,3}[A-Za-z]{0,2}|[A-Za-z]{1,2}(?!\w)))*)/g;
@@ -76,7 +76,7 @@ const Facets = (() => {
     return [...keys].sort((a, b) => sortKey(a) - sortKey(b));
   }
 
-  // ---------- issue types ----------
+  // ---------- finding types ----------
   const TYPES = [
     ['anom', 'Data anomalies', /duplicat|identical|repeat(?:ed|s)?\b|re-?used|copied|same (?:values?|numbers?|rows?|measurements?)\b|recur|twice|exactly (?:zero|equal)|placeholder|text strings?|precision|out of scale|substitut|every (?:triplicate|replicate)|carry one|pasted|stored as|coerced|corrupt|text-formatted|recorded as|whole numbers|featureless|non-zero|breaking it/gi],
     ['repro', 'Does not reproduce', /reproduc|recomput|recalculat|cannot (?:all )?(?:be )?(?:computed|derived|obtained|come from|give)|arithmetic|do(?:es)? not (?:add|sum|follow)|mean\b|s\.d\.|standard deviation|\bP ?values?\b|statistic|fold|round(?:ing|ed)|truncated|calculat|sum of|formula|imply|implies/gi],
@@ -111,7 +111,7 @@ const Facets = (() => {
     return best;
   }
 
-  // an "Issue type:" label from the audit -> type id; null if it is not one of ours
+  // a "Finding type:" label from the audit -> type id; null if it is not one of ours
   const squash = s => s.toLowerCase().replace(/\s*(?:&|\band\b)\s*/g, '&').replace(/[^a-z&]/g, '').replace(/ies$/, 'y').replace(/s$/, '');
   const BY_LABEL = Object.fromEntries(TYPES.map(t => [squash(t[1]), t[0]]));
   const typeOf = label => BY_LABEL[squash(label)] || null;

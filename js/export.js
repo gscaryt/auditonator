@@ -1,4 +1,4 @@
-// pipeline 1.0.1 | file changed 2026-10-02
+// pipeline 1.3.0 | file changed 2026-10-02
 // A workbook of the cells one finding cites, coloured as in the viewer. A sheet small enough is written whole;
 // a larger one keeps its first rows and the rows around the marked cells, at their original row and column
 // numbers, with the rows in between hidden. Values only: formulas and the workbook's own formatting are not read.

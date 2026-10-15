@@ -1,4 +1,4 @@
-// pipeline 1.0.1 | file changed 2026-10-13
+// pipeline 1.3.0 | file changed 2026-10-15
 const Parse = (() => {
   const LIGHT = { '⬛': 'black', '🟥': 'red', '🟨': 'yellow', '🟩': 'green' };
   // position on the second triage axis: the dots a finding heading or a triage entry carries
@@ -9,7 +9,7 @@ const Parse = (() => {
   const takePos = s => { const m = s.match(POS_RE); return m ? { pos: DOTS[m[1]], text: s.replace(POS_RE, ' — ').replace(/^\s*—\s*|\s*—\s*$/g, '').trim() } : { pos: null, text: s }; };
   const heading = l => { const m = l.match(/^(#{1,6})\s+(.*)$/); return m && { level: m[1].length, text: m[2].trim() }; };
   const CONDITIONAL = /\s*(?:—\s*)?\*Conditional\*\s*(?:—\s*)?/;
-  // the classes an audit reports as one bulleted list each, not as numbered findings
+  // the three group findings; audits before pipeline 1.3.0 list them unnumbered, as bulleted lists
   const LISTS = [['typo', /typo|grammat|spelling/i], ['misref', /misreferenc|cross-referenc/i], ['digit', /last digit|\bround(?:ing|ed)\b/i]];
   const listKind = s => (LISTS.find(([, re]) => re.test(s)) || [])[0] || null;
 
@@ -52,14 +52,15 @@ const Parse = (() => {
     return { queries, groups };
   }
 
-  // "- Related entities: …", "- Issue type: …", "- Queries: …" at the top of a finding's body
-  const META = /^\s*[-*]\s+(?:\*\*|\*)?(Related entities|Issue type|Queries)(?::\*\*|:\*|\*\*:|\*:|:)\s*(.*)$/i;
+  // "- Related entities: …", "- Finding type: …", "- Queries: …" at the top of a finding's body
+  // ("Issue type" before pipeline 1.3.0)
+  const META = /^\s*[-*]\s+(?:\*\*|\*)?(Related entities|Finding type|Issue type|Queries)(?::\*\*|:\*|\*\*:|\*:|:)\s*(.*)$/i;
   function splitMeta(body) {
     const meta = {};
     let i = 0;
     while (i < body.length && (!body[i].trim() || META.test(body[i]))) {
       const m = body[i].match(META);
-      if (m) meta[m[1].toLowerCase()[0]] = m[2].trim();
+      if (m) meta[/type$/i.test(m[1]) ? 't' : m[1].toLowerCase()[0]] = m[2].trim();
       i++;
     }
     if (!Object.keys(meta).length) return { body };
@@ -67,7 +68,7 @@ const Parse = (() => {
       body: body.slice(i),
       meta: {
         ents: meta.r || '',
-        types: (meta.i || '').split(/\s*[;,]\s*/).filter(Boolean),
+        types: (meta.t || '').split(/\s*[;,]\s*/).filter(Boolean),
         queries: (meta.q || '').split(/\s*[;,]\s*|\s+and\s+/).map(s => s.replace(/^(?:Q|queries?)\s*/i, '').trim()).filter(Boolean).flatMap(span)
       }
     };

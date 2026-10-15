@@ -1,4 +1,4 @@
-// pipeline 1.0.1 | file changed 2026-10-14
+// pipeline 1.3.0 | file changed 2026-10-15
 // Auditonator — review of a manuscript consistency audit. By Gustavo Tontini.
 (() => {
   const $ = s => document.querySelector(s);
@@ -106,18 +106,22 @@
     const twoAxis = all.some(f => f.pos);
     // the unnumbered classes are presentation only: peripheral unless the triage says otherwise
     if (twoAxis) all.forEach(f => { if (f.pseudo && !f.pos) f.pos = 'peripheral'; });
-    const posIdx = f => f.pos ? POS.indexOf(f.pos) : POS.length;
     all.forEach(f => {
       f.colour0 = f.colour;
-      const o = (st.findings[f.id] || {}).colour;
+      f.pos0 = f.pos || null;
+      const o = (st.findings[f.id] || {}).colour, op = (st.findings[f.id] || {}).pos;
       if (o && COLOURS.includes(o)) f.colour = o;
+      if (op && POS.includes(op)) f.pos = op;
+      if (f.custom) f.pos = (custom(f.id) || {}).pos || null;
       const qs = st.queries.filter(q => q.finding === f.id).map(q => q.text);
       const u = f.custom && custom(f.id);
-      const types = u ? u.types : f.meta ? f.meta.types.map(Facets.typeOf).filter(Boolean) : [];
+      // the typos group finding takes the app's own Typos type
+      const types = u ? u.types : /^typos and grammar$/i.test(f.title) ? ['typo'] : f.meta ? f.meta.types.map(Facets.typeOf).filter(Boolean) : [];
       f.types = types.length ? [...new Set(types)] : u ? ['other'] : [Facets.type(f)];
       f.type = f.types[0];
       f.ents = Facets.entities(u ? u.ents || [u.title, u.body].join('\n') : f.meta && f.meta.ents ? f.meta.ents : [f.title, f.location, f.head, f.brief, f.body, ...qs].join('\n'));
     });
+    const posIdx = f => f.pos ? POS.indexOf(f.pos) : POS.length;
     model = {
       A, C, map, twoAxis, run: (A && A.run) || {},
       msid: (A && A.msid) || (C && C.msid) || st.msid || '',
@@ -170,7 +174,7 @@
     const named = items.map(it => ({ ...it, name: it.path.split('/').pop() })).filter(it => it.name && !it.name.startsWith('.') && !PKG_SKIP.test(it.path));
     const stems = new Set(named.map(it => it.name.toLowerCase()));
     return Promise.all(named.filter(({ name }) => {
-      if (/\.(md|markdown)$/i.test(name)) return /audit/i.test(name);
+      if (/\.(md|markdown)$/i.test(name)) return /audit|-triage_/i.test(name);
       if (/\.json$/i.test(name)) return /auditonator/i.test(name);
       if (/\.png$/i.test(name)) return PLOT_NAME.test(name);
       if (!/\.pdf$/i.test(name) && !DOCX_EXT.test(name) && !SHEET_EXT.test(name)) return false;
@@ -239,7 +243,8 @@
     }
     const added = docFiles.map(addDoc);
     if (added.length) pdfIdx = pdfs.indexOf(added.find(p => isText(p) && p.role === 'main') || added.find(isText) || added[0]);
-    const isCrit = m => /critical/i.test(m.name) || /^#\s*Critical triage/m.test(m.text);
+    // the triage file: <MSID>-Triage_<TAG>.md, or <MSID>-Audit_Critical_<TAG>.md before pipeline 1.3.0
+    const isCrit = m => /critical|-triage_/i.test(m.name) || /^#\s*(?:Critical triage|Triage)\b/m.test(m.text);
     for (const m of md.sort((a, b) => isCrit(a) - isCrit(b))) {
       if (isCrit(m)) { src.critical = m.text; src.criticalName = m.name; }
       else if (!setAudit(m)) return;
@@ -344,7 +349,14 @@
   }
 
   const STATUS = { confirmed: 'Confirmed', dismissed: 'Dismissed' };
-  const reranked = f => f.colour !== f.colour0;
+  const recoloured = f => f.colour !== f.colour0;
+  const moved = f => !f.custom && (f.pos || null) !== (f.pos0 || null);
+  const reranked = f => recoloured(f) || moved(f);
+  // the Excel columns Colour (triage), Colour (changed), Position (triage), Position (changed)
+  const rankCells = f => f.custom
+    ? ['Added', CNAME[f.colour], 'Added', PNAME[f.pos] || '']
+    : [CNAME[f.colour0], recoloured(f) ? { v: CNAME[f.colour], hl: true } : '', PNAME[f.pos0] || '', moved(f) ? { v: PNAME[f.pos] || '', hl: true } : ''];
+  const RANK_HEAD = ['Colour (triage)', 'Colour (changed)', 'Position (triage)', 'Position (changed)'];
 
   function exportXlsx() {
     const items = exportItems();
@@ -354,33 +366,32 @@
     const rows = items.map((o, i) => {
       const ids = [...new Set(o.items.map(q => q.finding))];
       const fs = ids.map(id => model.map.get(id)).filter(Boolean);
+      const cells = fs.map(rankCells);
+      const join = k => [...new Set(cells.map(c => c[k] && c[k].v !== undefined ? c[k].v : c[k]).filter(Boolean))].join(', ');
       return [
         i + 1,
         o.header ? `${plain(o.header)}\n${o.items.map(q => `• ${plain(q.text)}`).join('\n')}` : plain(o.items[0].text),
         fs.map(fname).join(', '),
-        [...new Set(fs.map(f => CNAME[f.colour]))].join(', '),
-        [...new Set(fs.map(f => PNAME[f.pos]).filter(Boolean))].join(', ')
+        ...[0, 1, 2, 3].map(k => (k % 2 && join(k)) ? { v: join(k), hl: true } : join(k))
       ];
     });
     const nrows = notes.map(f => [
       fname(f),
       plain(f.head || f.title),
-      reranked(f) ? { v: CNAME[f.colour], hl: true } : CNAME[f.colour],
-      f.custom ? 'Added' : CNAME[f.colour0],
-      PNAME[f.pos] || '',
+      ...rankCells(f),
       STATUS[status(f.id)] || 'Open',
       labelsOf(f.id).join(', '),
       ((st.findings[f.id] || {}).note || '').trim()
     ]);
     const arows = added.map(f => [
-      fname(f), plain(f.title), CNAME[f.colour], f.types.map(t => Facets.TYPE_LABEL[t]).join(', '),
+      fname(f), plain(f.title), CNAME[f.colour], PNAME[f.pos] || '', f.types.map(t => Facets.TYPE_LABEL[t]).join(', '),
       f.ents.map(k => k.startsWith('src:') ? 'Source Data ' + Facets.label(k.slice(4)) : Facets.label(k)).join('; '),
       plain(f.body), STATUS[status(f.id)] || 'Open'
     ]);
     download(XLSX.build([
-      { name: 'Author queries', header: ['No.', 'Author query', 'Finding', 'Triage', 'Position'], rows, widths: [6, 110, 12, 10, 12] },
-      { name: 'Internal notes', header: ['Finding', 'Title', 'Severity', 'Triage', 'Position', 'Status', 'Labels', 'Note'], rows: nrows, widths: [9, 50, 10, 10, 12, 11, 22, 80] },
-      ...(arows.length ? [{ name: 'Added findings', header: ['Finding', 'Title', 'Severity', 'Issue type', 'Related entities', 'Description', 'Status'], rows: arows, widths: [9, 50, 10, 20, 30, 90, 11] }] : [])
+      { name: 'Author queries', header: ['No.', 'Author query', 'Finding', ...RANK_HEAD], rows, widths: [6, 110, 12, 14, 14, 14, 14] },
+      { name: 'Internal notes', header: ['Finding', 'Title', ...RANK_HEAD, 'Status', 'Labels', 'User note'], rows: nrows, widths: [9, 50, 14, 14, 14, 14, 11, 22, 80] },
+      ...(arows.length ? [{ name: 'Added findings', header: ['Finding', 'Title', 'Colour', 'Position', 'Finding type', 'Related entities', 'Description', 'Status'], rows: arows, widths: [9, 50, 10, 12, 20, 30, 90, 11] }] : [])
     ]), `${model.msid || 'audit'}-Author_Queries${runTag()}.xlsx`);
     toast(`Exported ${items.length} quer${items.length === 1 ? 'y' : 'ies'} · ${notes.length} note${notes.length === 1 ? '' : 's'}${added.length ? ` · ${added.length} added finding${added.length === 1 ? '' : 's'}` : ''}`);
   }
@@ -423,6 +434,27 @@
     const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
     if (el) el.scrollIntoView({ block: 'nearest' });
     else toast(`${fname(f)} moved to ${CNAME[c]} (hidden by filters)`);
+  }
+
+  function setPosition(id, p) {
+    const f = model.map.get(id);
+    if (!f || !(POS.includes(p) || p === '')) return;
+    const fs = fstate(id), u = f.custom && custom(id);
+    if (u) u.pos = p || null;
+    else if ((p || null) === (f.pos0 || null)) delete fs.pos; else fs.pos = p;
+    changed(); build(); render();
+    const el = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+    if (el) el.scrollIntoView({ block: 'nearest' });
+    else toast(`${fname(f)} moved to ${p ? PNAME[p] : 'no position'} (hidden by filters)`);
+  }
+
+  // back to the triage's colour and position
+  function revertRank(id) {
+    const f = model.map.get(id);
+    if (!f || f.custom) return;
+    const fs = fstate(id);
+    delete fs.colour; delete fs.pos;
+    changed(); build(); render();
   }
 
   // ---------- labels ----------
@@ -608,8 +640,8 @@
       + chip(pdfOnly.length, pdfOnly.length > 1 ? `${word} ×${pdfOnly.length}` : word, pdfOnly.map(p => p.name).join(', '))
       + (sheets.length ? chip(1, sheets.length > 1 ? `Sheets ×${sheets.length}` : 'Sheet', sheets.map(p => p.name).join(', ')) : '')
       + chip(plots.length, plots.length > 1 ? `Plots ×${plots.length}` : 'Plots', plots.map(p => p.name).join(', ') || 'not loaded; findings read the same without them')
-      // an audit written before the "Related entities / Issue type / Queries" lines: those are inferred from the wording
-      + (model.A && !model.A.findings.some(f => f.meta) ? '<span class="fchip warn" title="This audit predates the Related entities, Issue type and Queries lines. Entities, issue types and the query of each finding are inferred from the wording and may be off.">Older audit format</span>' : '') : '';
+      // an audit written before the "Related entities / Finding type / Queries" lines: those are inferred from the wording
+      + (model.A && !model.A.findings.some(f => f.meta) ? '<span class="fchip warn" title="This audit predates the Related entities, Finding type and Queries lines. Entities, finding types and the queries of each finding are inferred from the wording and may be off.">Older audit format</span>' : '') : '';
     $('#btnPdf').classList.toggle('on', ui.pdf);
     $('#main').classList.toggle('with-pdf', ui.pdf);
     ['#btnSave', '#btnCopy', '#btnXlsx', '#btnPdf'].forEach(s => $(s).disabled = !model || !model.map.size);
@@ -724,7 +756,7 @@
       const n = base.filter(f => f.types.includes(t)).length;
       return `<button class="tr ${ui.types.has(t) ? 'on' : ''} ${n ? '' : 'zero'}" data-type="${t}"><i></i><span>${Facets.TYPE_LABEL[t]}</span><em>${n}</em></button>`;
     }).join('');
-    return `<div class="ph"><b>Type of issue</b><span class="grow"></span>${ui.types.size ? '<button class="lnk" data-act="cleartypes">Clear</button>' : ''}</div><div class="pb tl">${rows}</div><p class="pn">${model.A && model.A.findings.some(f => f.meta) ? 'As given in the audit.' : 'Assigned automatically from each finding\'s wording.'}</p>`;
+    return `<div class="ph"><b>Finding type</b><span class="grow"></span>${ui.types.size ? '<button class="lnk" data-act="cleartypes">Clear</button>' : ''}</div><div class="pb tl">${rows}</div><p class="pn">${model.A && model.A.findings.some(f => f.meta) ? 'As given in the audit.' : 'Assigned automatically from each finding\'s wording.'}</p>`;
   }
 
   // the triage's Summary grid, drawn: colour rows by position columns; a cell, a row or a column filters the board
@@ -756,7 +788,7 @@
       const nq = st.queries.filter(q => q.finding === f.id).length;
       const brief = f.brief || (f.head ? '' : f.location);
       html += `<article class="card c-${f.colour} ${s ? 'is-' + s : ''} ${ui.sel === f.id ? 'is-sel' : ''}" data-id="${esc(f.id)}">
-        <div class="cm"><label class="chk" title="Confirm (C)"><input type="checkbox" data-act="confirm" ${s === 'confirmed' ? 'checked' : ''}></label><span class="fid">${fname(f)}</span>${posTag(f)}${f.conditional ? '<span class="tag">Conditional</span>' : ''}${f.with.length ? `<span class="tag">with #${f.with.join(', #')}</span>` : ''}${reranked(f) ? `<span class="tag sev" title="Severity changed from the triage">${CNAME[f.colour0]}→${CNAME[f.colour]}</span>` : ''}${f.custom ? '<span class="tag add" title="Added in the Auditonator; not in the audit">Added</span>' : ''}${(st.findings[f.id] || {}).note ? '<span class="tag note">Note</span>' : ''}<span class="qn" title="Author queries">${nq}&thinsp;Q</span><button class="x" data-act="dismiss" title="Dismiss (X)">✕</button></div>
+        <div class="cm"><label class="chk" title="Confirm (C)"><input type="checkbox" data-act="confirm" ${s === 'confirmed' ? 'checked' : ''}></label><span class="fid">${fname(f)}</span>${posTag(f)}${f.conditional ? '<span class="tag">Conditional</span>' : ''}${f.with.length ? `<span class="tag">with #${f.with.join(', #')}</span>` : ''}${recoloured(f) && !f.custom ? `<span class="tag sev" title="Colour changed from the triage">${CNAME[f.colour0]}→${CNAME[f.colour]}</span>` : ''}${moved(f) ? `<span class="tag sev" title="Position changed from the triage">${f.pos0 ? PDOTS[f.pos0] : '–'}→${f.pos ? PDOTS[f.pos] : '–'}</span>` : ''}${f.custom ? '<span class="tag add" title="Added in the Auditonator; not in the audit">Added</span>' : ''}${(st.findings[f.id] || {}).note ? '<span class="tag note">Note</span>' : ''}<span class="qn" title="Author queries">${nq}&thinsp;Q</span><button class="x" data-act="dismiss" title="Dismiss (X)">✕</button></div>
         <h3>${inline(f.head || f.title)}</h3>
         ${brief ? `<p>${inline(brief)}</p>` : ''}
         <div class="cf-row">${labelChips(f.id)}${typeChips(f)}${cardEnts(f)}</div>
@@ -801,8 +833,9 @@
     el.tabIndex = -1;
     el.innerHTML = `
       <div class="d-bar c-${f.colour}">
-        <select class="pill" data-act="sev" title="Severity (1–4 · 0 reverts to the triage)">${COLOURS.filter(c => c !== 'none' || f.colour0 === 'none').map(c => `<option value="${c}" ${c === f.colour ? 'selected' : ''}>${CNAME[c]}</option>`).join('')}</select>
-        ${reranked(f) ? `<button class="rev" data-act="sevreset" title="Revert to the triage colour (0)">was ${CNAME[f.colour0]} ↺</button>` : ''}<span class="fid">${fname(f)}</span>${posTag(f, true)}
+        <select class="pill" data-act="sev" title="Colour (1–4 · 0 reverts to the triage)">${COLOURS.filter(c => c !== 'none' || f.colour0 === 'none').map(c => `<option value="${c}" ${c === f.colour ? 'selected' : ''}>${CNAME[c]}</option>`).join('')}</select>
+        ${model.twoAxis ? `<select class="pill pos-pick" data-act="posn" title="Position (0 reverts to the triage)">${!f.pos || !f.pos0 ? `<option value="" ${f.pos ? '' : 'selected'}>No position</option>` : ''}${POS.map(p => `<option value="${p}" ${p === f.pos ? 'selected' : ''}>${PDOTS[p]} ${PNAME[p]}</option>`).join('')}</select>` : ''}
+        ${reranked(f) && !f.custom ? `<button class="rev" data-act="sevreset" title="Revert to the triage colour and position (0)">was ${[recoloured(f) ? CNAME[f.colour0] : '', moved(f) ? (f.pos0 ? PNAME[f.pos0] : 'no position') : ''].filter(Boolean).join(', ')} ↺</button>` : ''}<span class="fid">${fname(f)}</span>
         ${f.conditional ? '<span class="tag">Conditional</span>' : ''}
         <span class="sec">${inline(f.section || '')}</span>
         <span class="grow"></span>
@@ -826,7 +859,7 @@
           ${qs.map(queryEditor).join('') || '<p class="muted">No query linked to this finding.</p>'}
           <button class="add" data-act="addq">+ Add query</button>
         </section>
-        <section class="d-note"><h4>Note</h4><textarea data-act="note" rows="3" placeholder="Private note — never in copied queries; exported on the Excel tab ‘Internal notes’">${esc(note)}</textarea></section>
+        <section class="d-note"><h4>Note</h4><textarea data-act="note" rows="3" placeholder="User note — never in copied queries; exported on the Excel tab ‘Internal notes’">${esc(note)}</textarea></section>
       </div>`;
     const roots = [...el.querySelectorAll('.d-scroll > h2, .d-loc, .d-tri, .d-body')];
     roots.forEach(linkPages);
@@ -844,7 +877,7 @@
     const u = custom(f.id);
     return `<div class="ed">
       <label class="ed-l">Title<input class="ed-in" data-ed="title" value="${esc(u.title)}" placeholder="One-line statement of the problem — location"></label>
-      <div class="ed-l">Issue type<div class="ed-types">${Facets.TYPES.map(t => `<button class="ty ${u.types.includes(t) ? 'on' : ''}" data-edtype="${t}">${Facets.TYPE_LABEL[t]}</button>`).join('')}</div></div>
+      <div class="ed-l">Finding type<div class="ed-types">${Facets.TYPES.map(t => `<button class="ty ${u.types.includes(t) ? 'on' : ''}" data-edtype="${t}">${Facets.TYPE_LABEL[t]}</button>`).join('')}</div></div>
       <label class="ed-l">Related entities<input class="ed-in" data-ed="ents" value="${esc(u.ents)}" placeholder="Fig. 2c; Supplementary Table 3; Source Data Fig. 4; Methods"></label>
       <div class="d-ents ed-ents">${detailEnts(f)}</div>
       <div class="ed-l">Description
@@ -1276,7 +1309,7 @@
     }
     if (t.dataset.goto) return openDetail(t.dataset.goto);
     if (act === 'confirm' || act === 'dismiss') { e.stopPropagation(); return setStatus(card ? card.dataset.id : ui.sel, act === 'confirm' ? 'confirmed' : 'dismissed'); }
-    if (act === 'sevreset') { const f = model.map.get(ui.sel); return f && setColour(f.id, f.colour0); }
+    if (act === 'sevreset') return revertRank(ui.sel);
     if (act === 'prev') return step(-1);
     if (act === 'next') return step(1);
     if (act === 'qinc' && q) { q.include = t.checked; qEl.classList.toggle('off', !q.include); changed(); renderHeader(); return renderQueries(); }
@@ -1303,6 +1336,7 @@
       q.finding = t.value; changed(); render();
     }
     if (t.dataset.act === 'sev' && ui.sel) setColour(ui.sel, t.value);
+    if (t.dataset.act === 'posn' && ui.sel) setPosition(ui.sel, t.value);
     if (t.id === 'pdfOffset' && pdfs[pdfIdx]) { pdfs[pdfIdx].offset = +t.value || 0; changed(); }
   });
 
@@ -1347,7 +1381,7 @@
     else if (k === 'arrowup' || k === 'k') { e.preventDefault(); step(-1); }
     else if (k === 'c' || k === ' ') { e.preventDefault(); if (ui.sel) setStatus(ui.sel, 'confirmed'); }
     else if (k === 'x') { if (ui.sel) setStatus(ui.sel, 'dismissed'); }
-    else if (/^[0-4]$/.test(k)) { const f = ui.sel && model.map.get(ui.sel); if (f) setColour(f.id, k === '0' ? f.colour0 : COLOURS[+k - 1]); }
+    else if (/^[0-4]$/.test(k)) { const f = ui.sel && model.map.get(ui.sel); if (f) k === '0' ? (f.custom ? null : revertRank(f.id)) : setColour(f.id, COLOURS[+k - 1]); }
     else if (k === 'p') { ui.pdf = !ui.pdf; renderHeader(); renderPdf(); }
     else if (k === 'l') { e.preventDefault(); if (ui.sel) { if (!ui.open) openDetail(ui.sel); const i = document.querySelector('#detail .lin'); if (i) i.focus(); } }
     else if (k === 'n') { e.preventDefault(); addFinding(); }

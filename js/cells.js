@@ -1,4 +1,4 @@
-// pipeline 1.0.1 | file changed 2026-10-02
+// pipeline 1.3.0 | file changed 2026-10-02
 // Cell references in a finding's text (AB21:AB29, cell AI19, Fig.5e!B2, AO9 = AO11), and the colours
 // that show which of the cited cells hold the same values.
 const Cells = (() => {
