@@ -1,4 +1,4 @@
-// pipeline 1.3.0 | file changed 2026-10-15
+// pipeline 1.4.1 | file changed 2026-10-19
 const Parse = (() => {
   const LIGHT = { '⬛': 'black', '🟥': 'red', '🟨': 'yellow', '🟩': 'green' };
   // position on the second triage axis: the dots a finding heading or a triage entry carries
@@ -99,8 +99,8 @@ const Parse = (() => {
     const first = lines.findIndex(l => /^#{2,}\s/.test(l));
     const nc = lines.slice(0, first < 0 ? stop : first).find(l => /^\**Not checked\b/i.test(l));
     if (nc) out.notChecked = nc.replace(/^\**Not checked:?\**:?\s*/i, '').trim();
-    // the header lines of the run: Model, Pipeline version, Run
-    lines.slice(0, first < 0 ? stop : first).forEach(l => { const h = l.match(/^\**(Model|Pipeline version|Run):\**\s*(.+?)\s*$/); if (h) out.run[h[1].toLowerCase().split(' ')[0]] = h[2]; });
+    // the header lines of the run: Model, Pipeline version, Run, Compactions
+    lines.slice(0, first < 0 ? stop : first).forEach(l => { const h = l.match(/^\**(Model|Pipeline version|Run|Compactions):\**\s*(.+?)\s*$/); if (h) out.run[h[1].toLowerCase().split(' ')[0]] = h[2]; });
     let sec = '', cur = null, lst = null;
     const closeList = () => {
       const body = lst ? lst.body.join('\n').trim() : '';

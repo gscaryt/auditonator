@@ -1,4 +1,4 @@
-// pipeline 1.3.0 | file changed 2026-10-15
+// pipeline 1.4.1 | file changed 2026-10-19
 // Auditonator — review of a manuscript consistency audit. By Gustavo Tontini.
 (() => {
   const $ = s => document.querySelector(s);
@@ -635,7 +635,9 @@
     const chip = (ok, label, name) => `<span class="fchip ${ok ? 'ok' : ''}" title="${esc(name || 'not loaded')}">${label}</span>`;
     const pdfOnly = pdfs.filter(isText), word = pdfOnly.some(p => p.kind === 'docx') ? 'Docs' : 'PDF', sheets = pdfs.filter(p => p.kind === 'sheet');
     const run = model ? model.run : {};
-    $('#files').innerHTML = model ? (run.run ? `<span class="fchip" title="${esc([run.model && 'Model: ' + run.model, run.pipeline && 'Pipeline version: ' + run.pipeline].filter(Boolean).join('\n'))}">Run ${esc(run.run)}</span>` : '')
+    const compacted = parseInt(run.compactions, 10) || 0;
+    $('#files').innerHTML = model ? (run.run ? `<span class="fchip" title="${esc([run.model && 'Model: ' + run.model, run.pipeline && 'Pipeline version: ' + run.pipeline, run.compactions && 'Compactions: ' + run.compactions].filter(Boolean).join('\n'))}">Run ${esc(run.run)}</span>` : '')
+      + (compacted ? `<span class="fchip warn" title="The model's context was compacted ${compacted === 1 ? 'once' : compacted + ' times'} during the run: what it had read so far was replaced by a summary. Details read early (a value, a quote) may have been lost or blurred, so check findings against the files with that in mind.">Compacted ×${compacted}</span>` : '')
       + chip(src.audit, 'Audit', src.auditName) + chip(src.critical, 'Triage', src.criticalName)
       + chip(pdfOnly.length, pdfOnly.length > 1 ? `${word} ×${pdfOnly.length}` : word, pdfOnly.map(p => p.name).join(', '))
       + (sheets.length ? chip(1, sheets.length > 1 ? `Sheets ×${sheets.length}` : 'Sheet', sheets.map(p => p.name).join(', ')) : '')
@@ -851,7 +853,7 @@
         ${f.location ? `<div class="d-loc">${inline(f.location)}</div>` : ''}
         <div class="d-ents">${typeChips(f)}${detailEnts(f)}</div>`}
         <div class="d-labels">${labelChips(f.id, true)}<input class="lin" data-act="labelin" list="labelList" placeholder="+ Label" title="Type a label and press Enter (L)" autocomplete="off"><datalist id="labelList">${st.labels.filter(d => !labelsOf(f.id).includes(d.name)).map(d => `<option value="${esc(d.name)}"></option>`).join('')}</datalist></div>
-        ${!f.custom && (f.head || f.brief) ? `<div class="d-tri c-${f.colour}">${f.head ? `<b>${inline(f.head)}</b> ` : ''}${inline(f.brief)}${f.with.length ? ` <span class="tag">ranked with #${f.with.join(', #')}</span>` : ''}</div>` : ''}
+        ${!f.custom && ((f.brief && f.brief !== f.title) || f.with.length) ? `<div class="d-tri c-${f.colour}">${f.brief !== f.title ? inline(f.brief) : ''}${f.with.length ? ` <span class="tag">ranked with #${f.with.join(', #')}</span>` : ''}</div>` : ''}
         ${f.body && ui.edit !== f.id ? `<div class="md d-body">${MD.render(f.body)}</div>` : ''}
         ${plotsOf(f.id).length ? `<section class="d-plots"><h4>Plots <span>${plotsOf(f.id).length}</span></h4>${plotsOf(f.id).map(p => `<a href="${p.url}" target="_blank" title="${esc(p.name)} — open full size"><img src="${p.url}" alt="${esc(p.name)}"></a>`).join('')}</section>` : ''}
         <section class="d-q">

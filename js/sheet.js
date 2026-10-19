@@ -1,4 +1,4 @@
-// pipeline 1.3.0 | file changed 2026-10-05
+// pipeline 1.4.1 | file changed 2026-10-05
 // Spreadsheet reader: .xlsx/.xlsm, .xls (BIFF5/8), .ods, .csv/.tsv. No dependencies.
 // open(file) only reads the sheet list; read(i) streams one sheet and stops at MAX_CELLS,
 // so a workbook with a 400 MB sheet opens without loading that sheet whole.

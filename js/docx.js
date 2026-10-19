@@ -1,4 +1,4 @@
-// pipeline 1.3.0 | file changed 2026-10-03
+// pipeline 1.4.1 | file changed 2026-10-03
 // Word reader: .docx to HTML for the viewer pane. No dependencies; uses the zip reader in sheet.js.
 // Keeps text, headings, bold/italic/sub/superscript, tables, embedded images, footnotes and the page
 // breaks Word saved at its last layout (so "p. 6" links can scroll there). Deleted tracked text is

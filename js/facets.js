@@ -1,4 +1,4 @@
-// pipeline 1.3.0 | file changed 2026-10-15
+// pipeline 1.4.1 | file changed 2026-10-15
 const Facets = (() => {
   // ---------- entities: figures, tables, notes, source data, text sections ----------
   const REF = /\b(?:(Supplementary(?:\s+Information)?|Suppl?\.|SI|Extended\s+Data|ED)\s+)?(Fig(?:ure)?s?\.?|Tables?|Notes?|Data)\s*(S?\d{1,3}[A-Za-z]{0,2}(?:\s*(?:,|and|&|–|-|to)\s*(?:S?\d{1,3}[A-Za-z]{0,2}|[A-Za-z]{1,2}(?!\w)))*)/g;
