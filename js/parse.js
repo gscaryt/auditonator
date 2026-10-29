@@ -1,4 +1,3 @@
-// pipeline 1.4.1 | file changed 2026-10-19
 const Parse = (() => {
   const LIGHT = { '⬛': 'black', '🟥': 'red', '🟨': 'yellow', '🟩': 'green' };
   // position on the second triage axis: the dots a finding heading or a triage entry carries
@@ -8,10 +7,13 @@ const Parse = (() => {
   // "Finding 3 — ●●● Central — statement": the position, and the text without it
   const takePos = s => { const m = s.match(POS_RE); return m ? { pos: DOTS[m[1]], text: s.replace(POS_RE, ' — ').replace(/^\s*—\s*|\s*—\s*$/g, '').trim() } : { pos: null, text: s }; };
   const heading = l => { const m = l.match(/^(#{1,6})\s+(.*)$/); return m && { level: m[1].length, text: m[2].trim() }; };
-  const CONDITIONAL = /\s*(?:—\s*)?\*Conditional\*\s*(?:—\s*)?/;
+  const CONDITIONAL = /\s*(?:—\s*)?\*Conditional:?\*:?\s*(?:—\s*)?/;
   // the three group findings; audits before pipeline 1.3.0 list them unnumbered, as bulleted lists
   const LISTS = [['typo', /typo|grammat|spelling/i], ['misref', /misreferenc|cross-referenc/i], ['digit', /last digit|\bround(?:ing|ed)\b/i]];
   const listKind = s => (LISTS.find(([, re]) => re.test(s)) || [])[0] || null;
+  // "- Evidence basis: Recomputed; Text against text — what they cover" under a triage entry
+  const BASIS = /^\s*[-*]\s+(?:\*\*)?Evidence basis:(?:\*\*)?\s*(.*)$/i;
+  const splitBasis = s => { const k = s.indexOf(' — '); return { values: (k < 0 ? s : s.slice(0, k)).split(/\s*;\s*/).map(v => v.trim()).filter(Boolean), covers: k < 0 ? '' : s.slice(k + 3).trim() }; };
 
   function splitTitle(raw) {
     let conditional = false;
@@ -147,7 +149,7 @@ const Parse = (() => {
       title: (lines.find(l => /^\*[^*].*\*\s*$/.test(l)) || '').replace(/^\*|\*\s*$/g, ''),
       claim: '', pattern: '', entries: [], typo: null, lists: {}
     };
-    let colour = null, block = null, inSummary = false, pending = [], para = false;
+    let colour = null, block = null, inSummary = false, pending = [], para = false, last = null;
     const pattern = [];
     for (const l of lines) {
       const h = heading(l);
@@ -178,10 +180,12 @@ const Parse = (() => {
         head = head.replace(CONDITIONAL, ' ').replace(/^\s*—\s*/, '').trim();
         brief = brief.replace(CONDITIONAL, ' ').replace(/^\s*—\s*/, '').trim();
         const e = { colour, pos: ph.pos || pb.pos, ids: (k > 0 ? inner.slice(0, k) : inner).replace(/^Findings?\s+/, '').match(/C?\d+/g) || [], head, brief, conditional };
-        out.entries.push(e);
+        out.entries.push(last = e);
         if (!brief) pending.push(e);
         continue;
       }
+      const eb = l.match(BASIS);
+      if (eb) { if (last) last.basis = splitBasis(eb[1]); continue; }
       const lk = bullet && (listKind(s.split(' — ')[0].slice(0, 60)) || (/typograph/i.test(s) ? 'typo' : null));
       if (lk) {
         const lp = takePos(s.replace(/\*\*/g, '').trim());
@@ -282,7 +286,38 @@ const Parse = (() => {
     });
   }
 
-  return { parseAudit, parseCritical, match };
+  // the findings data (<MSID>-Findings_<TAG>.json) as the two parsers would give them from the audit and triage files
+  function fromData(d) {
+    const findings = d.findings.map(f => ({
+      id: f.number, colour: f.colour, pos: f.position, section: f.section || '', title: f.title, location: f.location || '',
+      conditional: !!f.conditional, body: f.body || '',
+      meta: { ents: (f.related_entities || []).join('; '), types: f.finding_type || [], queries: f.queries || [] }
+    }));
+    const queries = [], groups = {};
+    let g = 0;
+    d.queries.forEach(q => {
+      if (q.lead) { groups[`g${++g}`] = { num: q.number, header: q.text, kind: listKind(q.text) || 'list' }; return; }
+      const gid = q.group && Object.keys(groups).find(k => groups[k].num === q.group);
+      queries.push({ id: `q${queries.length + 1}`, num: q.number, text: q.text, orig: q.text, ...(gid ? { group: gid } : {}) });
+    });
+    const run = {};
+    [['model', d.model], ['pipeline', d.pipeline], ['run', d.run], ['compactions', d.compactions]].forEach(([k, v]) => { if (v) run[k] = v; });
+    const A = {
+      msid: d.msid || '', manuscript: d.manuscript || '', findings, run, lists: {}, queries, groups,
+      checked: (d.checked_but_not_raised || []).map(s => `- ${s}`).join('\n'), notChecked: d.not_checked || ''
+    };
+    const byId = new Map(d.findings.map(f => [f.number, f]));
+    const C = {
+      msid: d.msid || '', title: d.title || '', claim: d.central_claim || '', pattern: d.recurrence || '', typo: null, lists: {},
+      entries: (d.triage_order || d.findings.map(f => f.number)).map(id => byId.get(id)).filter(Boolean).map(f => ({
+        colour: f.colour, pos: f.position, ids: [f.number], head: f.statement || '', brief: f.reason || '', conditional: !!f.conditional,
+        basis: f.evidence_basis && f.evidence_basis.values && f.evidence_basis.values.length ? f.evidence_basis : undefined
+      }))
+    };
+    return { A, C };
+  }
+
+  return { parseAudit, parseCritical, match, fromData };
 })();
 
 if (typeof module !== 'undefined') module.exports = Parse;

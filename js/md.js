@@ -1,4 +1,3 @@
-// pipeline 1.4.1 | file changed 2026-09-30
 const MD = (() => {
   const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 

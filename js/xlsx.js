@@ -1,4 +1,3 @@
-// pipeline 1.4.1 | file changed 2026-10-02
 const XLSX = (() => {
   const enc = new TextEncoder();
   const CRC = new Uint32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });

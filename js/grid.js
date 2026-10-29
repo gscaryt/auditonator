@@ -1,4 +1,3 @@
-// pipeline 1.4.1 | file changed 2026-10-02
 // Read-only sheet grid. Only the rows and columns in view (plus a margin) are in the DOM,
 // so a sheet of several hundred thousand cells scrolls like a small one.
 const Grid = (() => {

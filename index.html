@@ -1,5 +1,4 @@
 <!doctype html>
-<!-- pipeline 1.4.1 | file changed 2026-10-15 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -14,8 +13,8 @@
   <div class="ms"><b id="msid"></b><span id="mstitle"></span></div>
   <div class="files" id="files"></div>
   <div class="actions">
-    <button class="btn" data-act="load" title="A package .zip, or audit .md, triage .md, plots, PDFs, Word files, spreadsheets or a saved .json">Load</button>
-    <button class="btn" data-act="loadfolder" title="Load a whole audited/&lt;MSID&gt;/ folder: audit, triage, plots, PDFs, Word files and spreadsheets">Load folder</button>
+    <button class="btn" data-act="load" title="A package .zip, or audit .md, triage .md, findings data .json, plots, PDFs, Word files, spreadsheets or a saved .json">Load</button>
+    <button class="btn" data-act="loadfolder" title="Load a whole audited/&lt;MSID&gt;/ folder: audit, triage, findings data, plots, PDFs, Word files and spreadsheets">Load folder</button>
     <button class="btn" id="btnSave" data-act="save" title="Save work (⌘/Ctrl+S) · Shift-click: save as">Save</button>
     <span class="sep"></span>
     <button class="btn" id="btnCopy" data-act="copy" title="Copy author queries of confirmed findings">Copy queries</button>
@@ -39,10 +38,11 @@
       <div class="filters">
         <div class="cfs" id="colourFilter"></div>
         <div class="seg" id="statusFilter">
-          <button data-status="all">All</button><button data-status="open">Open</button><button data-status="confirmed">Confirmed</button><button data-status="dismissed">Dismissed</button>
+          <button data-status="all">All</button><button data-status="open">Open</button><button data-status="confirmed">Confirmed</button><button data-status="unsure">Unsure</button><button data-status="escalate">Escalate</button><button data-status="dismissed">Dismissed</button>
         </div>
         <div class="fdrop" data-dim="entity"><button class="fbtn" data-pop="entity" title="Show findings that involve a figure, table, source-data sheet or section (E)"></button><div class="pop" hidden></div></div>
         <div class="fdrop" data-dim="type"><button class="fbtn" data-pop="type" title="Show findings of a type (T)"></button><div class="pop" hidden></div></div>
+        <div class="fdrop" data-dim="basis"><button class="fbtn" data-pop="basis" title="Show findings by how the triage says they are shown"></button><div class="pop" hidden></div></div>
         <div class="fdrop" data-dim="label"><button class="fbtn" data-pop="label" title="Show findings with a label"></button><div class="pop" hidden></div></div>
         <input id="search" type="search" placeholder="Search  /" autocomplete="off">
         <button class="fbtn" id="btnConfirmAll" data-act="confirmall" title="Confirm every open finding shown (dismissed ones are left alone)">Confirm all</button>
@@ -51,7 +51,7 @@
       </div>
       <div class="active" id="activeFilters" hidden></div>
       <div class="cards" id="cards"></div>
-      <div class="keys"><span class="by">by G.T.</span><kbd>↑</kbd><kbd>↓</kbd> move <kbd>↵</kbd> details <kbd>C</kbd> confirm <kbd>X</kbd> dismiss <kbd>1</kbd>–<kbd>4</kbd> colour <kbd>E</kbd> entity <kbd>T</kbd> type <kbd>L</kbd> label <kbd>N</kbd> new finding <kbd>P</kbd> PDF <kbd>Q</kbd> queries</div>
+      <div class="keys"><span class="by">by G.T.</span><kbd>↑</kbd><kbd>↓</kbd> move <kbd>↵</kbd> details <kbd>C</kbd> confirm <kbd>U</kbd> unsure <kbd>⇧E</kbd> escalate <kbd>X</kbd> dismiss <kbd>1</kbd>–<kbd>4</kbd> colour <kbd>E</kbd> entity <kbd>T</kbd> type <kbd>L</kbd> label <kbd>N</kbd> new finding <kbd>P</kbd> PDF <kbd>Q</kbd> queries</div>
     </div>
     <div id="queriesView" class="view" hidden>
       <div class="qbar"><span id="qCount"></span><span class="grow"></span><button class="btn" data-act="copy">Copy</button><button class="btn" data-act="xlsx" title="Excel: author queries, internal notes and labels, and any added findings">Excel</button></div>
@@ -85,7 +85,7 @@
     <div class="logo big"><i></i><i></i><i></i><i></i></div>
     <h1>Load an audit</h1>
     <p>Drop or select a whole run folder (<code>audited/&lt;MSID&gt;/</code>) or its <code>…-Auditonator_….zip</code>: the audit, triage, plots, manuscript files and source data load together.</p>
-    <p>Single files work too: <code>…-Audit_….md</code>, <code>…-Triage_….md</code>, plot PNGs, PDFs, Word files, spreadsheets, or a saved <code>…-Auditonator_….json</code>.</p>
+    <p>Single files work too: <code>…-Audit_….md</code>, <code>…-Triage_….md</code>, <code>…-Findings_….json</code>, plot PNGs, PDFs, Word files, spreadsheets, or a saved <code>…-Auditonator_….json</code>.</p>
     <button class="btn primary" data-act="loadfolder">Select folder</button>
     <button class="btn" data-act="load">Select files or ZIP</button>
     <div id="resume"></div>

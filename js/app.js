@@ -1,4 +1,3 @@
-// pipeline 1.4.1 | file changed 2026-10-19
 // Auditonator — review of a manuscript consistency audit. By Gustavo Tontini.
 (() => {
   const $ = s => document.querySelector(s);
@@ -35,7 +34,7 @@
   const LCOL = ['#3563d9', '#0e8f8a', '#7a4fd6', '#c03b8f', '#8a6239', '#5b6678', '#0a87b5', '#4c4fbf'];
   const CE = (() => { try { const d = document.createElement('div'); d.contentEditable = 'plaintext-only'; return d.contentEditable === 'plaintext-only' ? 'plaintext-only' : 'true'; } catch (e) { return 'true'; } })();
 
-  let src = { audit: '', auditName: '', critical: '', criticalName: '' };
+  let src = { audit: '', auditName: '', critical: '', criticalName: '', data: null, dataName: '' };
   // pdfs: everything the viewer pane shows, PDFs and Word files ({ kind: 'docx' }) first, then spreadsheets ({ kind: 'sheet' })
   let st = null, model = null, pdfs = [], pdfIdx = 0, dirty = false, fileHandle = null, autosaveT = 0, docSeq = 0;
   // plots: the audit's finding plots, PNGs named F<finding numbers>_<panel>.png (F03_Fig3F.png, F03+07_Fig2A.png)
@@ -49,7 +48,7 @@
   const isText = p => p.kind === 'pdf' || p.kind === 'docx';
   const freeDoc = p => { if (p.url) URL.revokeObjectURL(p.url); if (p.doc) p.doc.then(d => d.urls.forEach(u => URL.revokeObjectURL(u)), () => { }); };
   const VIEW_ACCEPT = '.pdf,.docx,.xlsx,.xlsm,.xls,.ods,.csv,.tsv';
-  const ui = { tab: 'findings', sel: null, colours: new Set(), status: 'all', q: '', ents: new Set(), entMode: 'any', types: new Set(), labels: new Set(), pos: new Set(), pop: null, open: false, edit: null, pdf: false, claimOpen: false, axesOpen: true };
+  const ui = { tab: 'findings', sel: null, colours: new Set(), status: 'all', q: '', ents: new Set(), entMode: 'any', types: new Set(), labels: new Set(), basis: new Set(), pos: new Set(), pop: null, open: false, edit: null, pdf: false, claimOpen: false, axesOpen: true };
 
   const plain = s => s.replace(/<[^>]+>/g, '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/(^|[^*\w])\*(?!\s)(.+?)\*(?!\w)/g, '$1$2').replace(/`([^`]+)`/g, '$1');
   const fstate = id => st.findings[id] || (st.findings[id] = {});
@@ -58,6 +57,11 @@
   const labelsOf = id => (st.findings[id] || {}).labels || [];
   const lcol = name => { const d = st.labels.find(l => l.name === name); return LCOL[d ? d.c % LCOL.length : 0]; };
   const custom = id => (st.custom || []).find(u => u.id === id);
+  // the review statuses; only confirmed findings send their queries
+  const STATUS = { confirmed: 'Confirmed', dismissed: 'Dismissed', unsure: 'Unsure', escalate: 'Escalate' };
+  const BASES = ['Recomputed', 'Text against text', 'Identical values', 'Statistical pattern', 'Outside fact'];
+  // the findings data, used for the board when it belongs to the loaded audit (same run tag), or when no audit file is loaded
+  const useData = () => !!src.data && (!src.audit || src.auditName.includes(`-Audit_${src.data.tag}.`));
 
   function toast(msg) {
     const t = $('#toast');
@@ -79,13 +83,14 @@
   }
 
   function build() {
-    const A = src.audit ? Parse.parseAudit(src.audit) : null;
-    const C = src.critical ? Parse.parseCritical(src.critical) : null;
+    const D = useData() ? Parse.fromData(src.data) : null;
+    const A = D ? D.A : src.audit ? Parse.parseAudit(src.audit) : null;
+    const C = D ? D.C : src.critical ? Parse.parseCritical(src.critical) : null;
     const map = new Map();
     (A ? A.findings : []).forEach((f, i) => map.set(f.id, { ...f, doc: i, colour: f.colour || 'none', brief: '', head: '', rank: 1e4, with: [] }));
     if (C) C.entries.forEach((e, r) => e.ids.forEach(id => {
       const f = map.get(id) || { id, title: e.head || e.brief, location: '', section: '', body: '', doc: 1e3 + r };
-      map.set(id, Object.assign(f, { colour: e.colour, pos: e.pos || f.pos || null, brief: e.brief, head: e.head, rank: r, with: e.ids.filter(x => x !== id), conditional: f.conditional || e.conditional }));
+      map.set(id, Object.assign(f, { colour: e.colour, pos: e.pos || f.pos || null, brief: e.brief, head: e.head, rank: r, with: e.ids.filter(x => x !== id), conditional: f.conditional || e.conditional, basis: e.basis || null }));
     }));
     st.labels = st.labels || []; st.custom = st.custom || [];
     // findings added in the app: kept in the saved work, never in the audit file
@@ -119,7 +124,8 @@
       const types = u ? u.types : /^typos and grammar$/i.test(f.title) ? ['typo'] : f.meta ? f.meta.types.map(Facets.typeOf).filter(Boolean) : [];
       f.types = types.length ? [...new Set(types)] : u ? ['other'] : [Facets.type(f)];
       f.type = f.types[0];
-      f.ents = Facets.entities(u ? u.ents || [u.title, u.body].join('\n') : f.meta && f.meta.ents ? f.meta.ents : [f.title, f.location, f.head, f.brief, f.body, ...qs].join('\n'));
+      f.ents = u ? Facets.entities(u.ents || [u.title, u.body].join('\n'), !!u.ents) : f.meta && f.meta.ents ? Facets.entities(f.meta.ents, true) : Facets.entities([f.title, f.location, f.head, f.brief, f.body, ...qs].join('\n'));
+      f.bases = f.basis ? f.basis.values : [];
     });
     const posIdx = f => f.pos ? POS.indexOf(f.pos) : POS.length;
     model = {
@@ -130,7 +136,7 @@
       doc: all.slice().sort((a, b) => a.doc - b.doc)
     };
     if (!map.has(ui.sel)) ui.sel = model.order.length ? model.order[0].id : null;
-    if (build.msid !== model.msid) { ui.ents.clear(); ui.types.clear(); ui.labels.clear(); ui.open = false; ui.edit = null; build.msid = model.msid; }
+    if (build.msid !== model.msid) { ui.ents.clear(); ui.types.clear(); ui.labels.clear(); ui.basis.clear(); ui.open = false; ui.edit = null; build.msid = model.msid; }
     [...ui.labels].forEach(l => { if (!st.labels.some(d => d.name === l)) ui.labels.delete(l); });
   }
 
@@ -143,7 +149,7 @@
   function snapshot() {
     return {
       app: 'auditonator', v: 1, savedAt: new Date().toISOString(), msid: model ? model.msid : '',
-      audit: { name: src.auditName, text: src.audit }, critical: { name: src.criticalName, text: src.critical },
+      audit: { name: src.auditName, text: src.audit }, critical: { name: src.criticalName, text: src.critical }, data: src.data ? { name: src.dataName, json: src.data } : null,
       pdfs: pdfs.map(p => ({ name: p.name, offset: p.offset })),
       state: st, ui: { sel: ui.sel }
     };
@@ -151,7 +157,7 @@
 
   function restore(s) {
     if (!s || s.app !== 'auditonator') return toast('Not an Auditonator save file');
-    src = { audit: s.audit.text || '', auditName: s.audit.name || '', critical: s.critical.text || '', criticalName: s.critical.name || '' };
+    src = { audit: s.audit.text || '', auditName: s.audit.name || '', critical: s.critical.text || '', criticalName: s.critical.name || '', data: s.data ? s.data.json : null, dataName: s.data ? s.data.name : '' };
     st = s.state;
     pdfs.forEach(freeDoc);
     pdfs = []; fileHandle = null; dropPlots();
@@ -175,7 +181,7 @@
     const stems = new Set(named.map(it => it.name.toLowerCase()));
     return Promise.all(named.filter(({ name }) => {
       if (/\.(md|markdown)$/i.test(name)) return /audit|-triage_/i.test(name);
-      if (/\.json$/i.test(name)) return /auditonator/i.test(name);
+      if (/\.json$/i.test(name)) return /auditonator|-findings_/i.test(name);
       if (/\.png$/i.test(name)) return PLOT_NAME.test(name);
       if (!/\.pdf$/i.test(name) && !DOCX_EXT.test(name) && !SHEET_EXT.test(name)) return false;
       // the audit's own Word copy and the correspondence are not what the findings cite
@@ -237,9 +243,13 @@
       else if (/\.(md|markdown|txt)$/i.test(f.name)) md.push({ name: f.name, text: await f.text() });
       else toast(`Skipped ${f.name}`);
     }
+    let data = null;
     for (const f of saves) {
+      let j;
+      try { j = JSON.parse(await f.text()); } catch (e) { toast(`Could not read ${f.name}`); continue; }
+      if (j && Array.isArray(j.findings) && Array.isArray(j.queries) && j.app !== 'auditonator') { data = { name: f.name, json: j }; continue; }
       if (dirty && !confirm(`Discard unsaved changes on ${model.msid}?`)) return;
-      try { restore(JSON.parse(await f.text())); } catch (e) { toast(`Could not read ${f.name}`); }
+      restore(j);
     }
     const added = docFiles.map(addDoc);
     if (added.length) pdfIdx = pdfs.indexOf(added.find(p => isText(p) && p.role === 'main') || added.find(isText) || added[0]);
@@ -250,7 +260,8 @@
       else if (!setAudit(m)) return;
     }
     pngs.forEach(addPlot);
-    if (md.length) {
+    if (data && !setData(data)) return;
+    if (md.length || data) {
       if (!st) st = freshState(null);
       build();
       if (model.A && model.C && model.A.msid && model.C.msid && model.A.msid !== model.C.msid) toast(`Audit is ${model.A.msid}, triage is ${model.C.msid}`);
@@ -259,14 +270,27 @@
     render();
   }
 
+  // the findings data: a fresh state from it when no audit of the same run holds the work
+  function setData(d) {
+    if (!d.json.findings.length) { toast(`No findings in ${d.name}`); return true; }
+    src.data = d.json; src.dataName = d.name;
+    if (st && st.msid === d.json.msid && (src.audit || st.queries.length)) return true;
+    const progress = st && (Object.values(st.findings).some(v => v.s || v.note || v.colour || (v.labels || []).length) || (st.custom || []).length);
+    if (progress && !confirm(`Replace the current work on ${model.msid} with ${d.json.msid || d.name}?`)) { src.data = null; src.dataName = ''; return false; }
+    st = freshState(Parse.fromData(d.json).A);
+    return true;
+  }
+
   function setAudit(m) {
     const A = Parse.parseAudit(m.text);
     if (!A.findings.length) { toast(`No findings found in ${m.name}`); return true; }
     if (st && src.audit === m.text) return true;
+    // the audit file of the run whose findings data already hold the work
+    if (st && src.data && st.msid === A.msid && m.name.includes(`-Audit_${src.data.tag}.`)) { src.audit = m.text; src.auditName = m.name; return true; }
     const progress = st && (Object.values(st.findings).some(v => v.s || v.note || v.colour || (v.labels || []).length) || (st.custom || []).length);
     if (progress && !confirm(`Replace the current work on ${model.msid} with ${A.msid || m.name}?`)) return false;
     if (st && st.msid && st.msid !== A.msid) {
-      src.critical = ''; src.criticalName = ''; fileHandle = null; dropPlots();
+      src.critical = ''; src.criticalName = ''; src.data = null; src.dataName = ''; fileHandle = null; dropPlots();
       pdfs = pdfs.filter(p => !p.name.includes(st.msid) || (freeDoc(p), false));
       pdfIdx = 0;
     }
@@ -348,7 +372,6 @@
     toast(`Copied ${items.length} queries`);
   }
 
-  const STATUS = { confirmed: 'Confirmed', dismissed: 'Dismissed' };
   const recoloured = f => f.colour !== f.colour0;
   const moved = f => !f.custom && (f.pos || null) !== (f.pos0 || null);
   const reranked = f => recoloured(f) || moved(f);
@@ -358,9 +381,14 @@
     : [CNAME[f.colour0], recoloured(f) ? { v: CNAME[f.colour], hl: true } : '', PNAME[f.pos0] || '', moved(f) ? { v: PNAME[f.pos] || '', hl: true } : ''];
   const RANK_HEAD = ['Colour (triage)', 'Colour (changed)', 'Position (triage)', 'Position (changed)'];
 
+  // the cells every finding row carries: Conditional, Finding type, Evidence basis, Related entities as the audit gives them
+  const typeCell = f => f.types.map(t => Facets.TYPE_LABEL[t]).join('; ');
+  const basisCell = f => f.basis ? f.basis.values.join('; ') + (f.basis.covers ? ' — ' + plain(f.basis.covers) : '') : '';
+  const entsCell = f => (f.custom ? (custom(f.id) || {}).ents : f.meta && f.meta.ents) || f.ents.map(k => k.startsWith('src:') ? 'Source Data ' + Facets.label(k.slice(4)) : Facets.label(k)).join('; ');
+
   function exportXlsx() {
     const items = exportItems();
-    const notes = model.order.filter(f => ((st.findings[f.id] || {}).note || '').trim() || reranked(f) || labelsOf(f.id).length);
+    const notes = model.order.filter(f => (((st.findings[f.id] || {}).note || '').trim() || reranked(f) || labelsOf(f.id).length || ['unsure', 'escalate'].includes(status(f.id))));
     const added = model.order.filter(f => f.custom);
     if (!items.length && !notes.length && !added.length) return toast('Nothing to export: confirm findings or add notes first');
     const rows = items.map((o, i) => {
@@ -372,6 +400,7 @@
         i + 1,
         o.header ? `${plain(o.header)}\n${o.items.map(q => `• ${plain(q.text)}`).join('\n')}` : plain(o.items[0].text),
         fs.map(fname).join(', '),
+        fs.map(entsCell).join('\n'),
         ...[0, 1, 2, 3].map(k => (k % 2 && join(k)) ? { v: join(k), hl: true } : join(k))
       ];
     });
@@ -379,19 +408,19 @@
       fname(f),
       plain(f.head || f.title),
       ...rankCells(f),
+      f.conditional ? 'Yes' : '', typeCell(f), basisCell(f), entsCell(f),
       STATUS[status(f.id)] || 'Open',
       labelsOf(f.id).join(', '),
       ((st.findings[f.id] || {}).note || '').trim()
     ]);
     const arows = added.map(f => [
-      fname(f), plain(f.title), CNAME[f.colour], PNAME[f.pos] || '', f.types.map(t => Facets.TYPE_LABEL[t]).join(', '),
-      f.ents.map(k => k.startsWith('src:') ? 'Source Data ' + Facets.label(k.slice(4)) : Facets.label(k)).join('; '),
-      plain(f.body), STATUS[status(f.id)] || 'Open'
+      fname(f), plain(f.title), CNAME[f.colour], PNAME[f.pos] || '', '', typeCell(f), '', entsCell(f),
+      plain(f.body), STATUS[status(f.id)] || 'Open', labelsOf(f.id).join(', ')
     ]);
     download(XLSX.build([
-      { name: 'Author queries', header: ['No.', 'Author query', 'Finding', ...RANK_HEAD], rows, widths: [6, 110, 12, 14, 14, 14, 14] },
-      { name: 'Internal notes', header: ['Finding', 'Title', ...RANK_HEAD, 'Status', 'Labels', 'User note'], rows: nrows, widths: [9, 50, 14, 14, 14, 14, 11, 22, 80] },
-      ...(arows.length ? [{ name: 'Added findings', header: ['Finding', 'Title', 'Colour', 'Position', 'Finding type', 'Related entities', 'Description', 'Status'], rows: arows, widths: [9, 50, 10, 12, 20, 30, 90, 11] }] : [])
+      { name: 'Author queries', header: ['No.', 'Author query', 'Finding', 'Related entities', ...RANK_HEAD], rows, widths: [6, 110, 12, 30, 14, 14, 14, 14] },
+      { name: 'Internal notes', header: ['Finding', 'Title', ...RANK_HEAD, 'Conditional', 'Finding type', 'Evidence basis', 'Related entities', 'Status', 'User labels', 'User note'], rows: nrows, widths: [9, 50, 14, 14, 14, 14, 11, 22, 40, 30, 11, 22, 80] },
+      ...(arows.length ? [{ name: 'Added findings', header: ['Finding', 'Title', 'Colour', 'Position', 'Conditional', 'Finding type', 'Evidence basis', 'Related entities', 'Description', 'Status', 'User labels'], rows: arows, widths: [9, 50, 10, 12, 11, 20, 20, 30, 90, 11, 22] }] : [])
     ]), `${model.msid || 'audit'}-Author_Queries${runTag()}.xlsx`);
     toast(`Exported ${items.length} quer${items.length === 1 ? 'y' : 'ies'} · ${notes.length} note${notes.length === 1 ? '' : 's'}${added.length ? ` · ${added.length} added finding${added.length === 1 ? '' : 's'}` : ''}`);
   }
@@ -547,10 +576,11 @@
       (skip === 'type' || !ui.types.size || f.types.some(t => ui.types.has(t))) &&
       (skip === 'entity' || !ents.length || (ui.entMode === 'all' ? ents.every(k => f.ents.includes(k)) : ents.some(k => f.ents.includes(k)))) &&
       (skip === 'label' || !ui.labels.size || labelsOf(f.id).some(l => ui.labels.has(l))) &&
+      (skip === 'basis' || !ui.basis.size || f.bases.some(b => ui.basis.has(b))) &&
       (!q || `${f.id} ${f.title} ${f.head} ${f.brief} ${f.location} ${f.body}`.toLowerCase().includes(q));
   }
   const visible = () => model.order.filter(f => passes(f));
-  const filtering = () => ui.ents.size || ui.types.size || ui.labels.size || ui.colours.size || ui.pos.size || ui.status !== 'all' || ui.q.trim();
+  const filtering = () => ui.ents.size || ui.types.size || ui.labels.size || ui.basis.size || ui.colours.size || ui.pos.size || ui.status !== 'all' || ui.q.trim();
 
   function select(id, scroll = true) {
     if (ui.edit && ui.edit !== id) finishEdit();
@@ -638,7 +668,8 @@
     const compacted = parseInt(run.compactions, 10) || 0;
     $('#files').innerHTML = model ? (run.run ? `<span class="fchip" title="${esc([run.model && 'Model: ' + run.model, run.pipeline && 'Pipeline version: ' + run.pipeline, run.compactions && 'Compactions: ' + run.compactions].filter(Boolean).join('\n'))}">Run ${esc(run.run)}</span>` : '')
       + (compacted ? `<span class="fchip warn" title="The model's context was compacted ${compacted === 1 ? 'once' : compacted + ' times'} during the run: what it had read so far was replaced by a summary. Details read early (a value, a quote) may have been lost or blurred, so check findings against the files with that in mind.">Compacted ×${compacted}</span>` : '')
-      + chip(src.audit, 'Audit', src.auditName) + chip(src.critical, 'Triage', src.criticalName)
+      + chip(src.audit || useData(), 'Audit', src.auditName || (useData() ? 'from ' + src.dataName : '')) + chip(src.critical || useData(), 'Triage', src.criticalName || (useData() ? 'from ' + src.dataName : ''))
+      + (src.data ? chip(useData(), 'Data', useData() ? `${src.dataName}: the board is drawn from the findings data` : `${src.dataName}: not used, it belongs to another run than ${src.auditName}`) : '')
       + chip(pdfOnly.length, pdfOnly.length > 1 ? `${word} ×${pdfOnly.length}` : word, pdfOnly.map(p => p.name).join(', '))
       + (sheets.length ? chip(1, sheets.length > 1 ? `Sheets ×${sheets.length}` : 'Sheet', sheets.map(p => p.name).join(', ')) : '')
       + chip(plots.length, plots.length > 1 ? `Plots ×${plots.length}` : 'Plots', plots.map(p => p.name).join(', ') || 'not loaded; findings read the same without them')
@@ -650,10 +681,13 @@
     const n = model ? model.order.length : 0;
     const c = model ? model.order.filter(f => status(f.id) === 'confirmed').length : 0;
     const d = model ? model.order.filter(f => status(f.id) === 'dismissed').length : 0;
-    $('#progress').innerHTML = n ? `<i class="p-c" style="width:${100 * c / n}%"></i><i class="p-d" style="width:${100 * d / n}%"></i>` : '';
-    $('#progress').title = n ? `${c} confirmed · ${d} dismissed · ${n - c - d} open` : '';
+    const u = model ? model.order.filter(f => status(f.id) === 'unsure').length : 0;
+    const x = model ? model.order.filter(f => status(f.id) === 'escalate').length : 0;
+    const o = n - c - d - u - x;
+    $('#progress').innerHTML = n ? `<i class="p-c" style="width:${100 * c / n}%"></i><i class="p-e" style="width:${100 * x / n}%"></i><i class="p-u" style="width:${100 * u / n}%"></i><i class="p-d" style="width:${100 * d / n}%"></i>` : '';
+    $('#progress').title = n ? `${c} confirmed · ${x} escalate · ${u} unsure · ${d} dismissed · ${o} open` : '';
     const r = model ? model.order.filter(reranked).length : 0;
-    $('#stat').innerHTML = n ? `<b>${c}</b> ✓ · <b>${d}</b> ✕ · <b>${n - c - d}</b> open${r ? ` · <b>${r}</b> re-ranked` : ''}` : '';
+    $('#stat').innerHTML = n ? `<b>${c}</b> ✓ · ${x ? `<b>${x}</b> escalate · ` : ''}${u ? `<b>${u}</b> unsure · ` : ''}<b>${d}</b> ✕ · <b>${o}</b> open${r ? ` · <b>${r}</b> re-ranked` : ''}` : '';
     const nq = model ? exportItems().length : 0;
     $('#nQ').textContent = nq;
     $('#nFind').textContent = n;
@@ -698,7 +732,7 @@
       pop.hidden = ui.pop !== dim;
       if (ui.pop === dim) {
         const pb = pop.querySelector('.pb'), sc = pb ? pb.scrollTop : 0;
-        pop.innerHTML = dim === 'entity' ? entityPop() : dim === 'label' ? labelPop() : typePop();
+        pop.innerHTML = dim === 'entity' ? entityPop() : dim === 'label' ? labelPop() : dim === 'basis' ? basisPop() : typePop();
         pop.querySelector('.pb').scrollTop = sc;
         pop.style.left = '0px';
         const r = pop.getBoundingClientRect(), over = r.right - (document.documentElement.clientWidth - 8);
@@ -708,11 +742,14 @@
     btn('entity', 'Entity', ui.ents, entLabel);
     btn('type', 'Type', ui.types, t => Facets.TYPE_LABEL[t]);
     btn('label', 'Label', ui.labels, l => l);
+    btn('basis', 'Evidence', ui.basis, b => b);
+    document.querySelector('.fdrop[data-dim="basis"]').hidden = !model.order.some(f => f.bases.length);
 
     const act = $('#activeFilters');
     const chips = [...ui.ents].sort((a, b) => Facets.sortKey(a) - Facets.sortKey(b)).map(k => `<button class="af" data-ent="${k}" title="Remove">${esc(entLabel(k))}<i>✕</i></button>`)
       .concat(POS.filter(p => ui.pos.has(p)).map(p => `<button class="af" data-pos="${p}" title="Remove">${PDOTS[p]} ${PNAME[p]}<i>✕</i></button>`))
       .concat([...ui.types].map(t => `<button class="af ty" data-type="${t}" title="Remove">${Facets.TYPE_LABEL[t]}<i>✕</i></button>`))
+      .concat([...ui.basis].map(b => `<button class="af eb" data-basis="${esc(b)}" title="Remove">${esc(b)}<i>✕</i></button>`))
       .concat([...ui.labels].map(l => `<button class="af lbf" data-label="${esc(l)}" style="--lc:${lcol(l)}" title="Remove"><b></b>${esc(l)}<i>✕</i></button>`));
     act.hidden = !filtering();
     if (!act.hidden) {
@@ -731,10 +768,10 @@
     const rows = Facets.GROUPS.map(([g, name]) => {
       const keys = [...all].filter(k => Facets.group(k) === g).sort((a, b) => Facets.sortKey(a) - Facets.sortKey(b));
       if (!keys.length) return '';
-      const short = k => g === 'src' ? Facets.label(k.slice(4)) : g === 'x' ? Facets.label(k) : Facets.label(k).replace(/^.*\s/, '');
+      const short = k => g === 'src' ? Facets.label(k.slice(4)) : g === 'x' || g === 'c' ? Facets.label(k) : Facets.label(k).replace(/^.*\s/, '');
       return `<div class="pr"><span class="pl">${name}</span><div class="pc">${keys.map(k => {
         const n = count(k);
-        return `<button class="pk ${ui.ents.has(k) ? 'on' : ''} ${n ? '' : 'zero'} ${g === 'x' || g === 'src' ? 'wide' : ''}" data-ent="${k}" title="${esc(entLabel(k))} — ${n} finding${n === 1 ? '' : 's'}">${esc(short(k))}<em>${n}</em></button>`;
+        return `<button class="pk ${ui.ents.has(k) ? 'on' : ''} ${n ? '' : 'zero'} ${g === 'x' || g === 'src' || g === 'c' ? 'wide' : ''}" data-ent="${k}" title="${esc(entLabel(k))} — ${n} finding${n === 1 ? '' : 's'}">${esc(short(k))}<em>${n}</em></button>`;
       }).join('')}</div></div>`;
     }).join('');
     return `<div class="ph"><b>Involves</b><span class="seg sm" title="With several selected: findings involving any of them, or all of them"><button class="${ui.entMode === 'any' ? 'on' : ''}" data-entmode="any">any</button><button class="${ui.entMode === 'all' ? 'on' : ''}" data-entmode="all">all</button></span><span class="grow"></span>${ui.ents.size ? '<button class="lnk" data-act="clearents">Clear</button>' : ''}</div><div class="pb">${rows || '<p class="muted">No figures, tables or sections recognised.</p>'}</div>`;
@@ -760,6 +797,17 @@
     }).join('');
     return `<div class="ph"><b>Finding type</b><span class="grow"></span>${ui.types.size ? '<button class="lnk" data-act="cleartypes">Clear</button>' : ''}</div><div class="pb tl">${rows}</div><p class="pn">${model.A && model.A.findings.some(f => f.meta) ? 'As given in the audit.' : 'Assigned automatically from each finding\'s wording.'}</p>`;
   }
+
+  function basisPop() {
+    const base = model.order.filter(f => passes(f, 'basis'));
+    const rows = BASES.filter(b => model.order.some(f => f.bases.includes(b))).map(b => {
+      const n = base.filter(f => f.bases.includes(b)).length;
+      return `<button class="tr ${ui.basis.has(b) ? 'on' : ''} ${n ? '' : 'zero'}" data-basis="${esc(b)}"><i></i><span>${esc(b)}</span><em>${n}</em></button>`;
+    }).join('');
+    return `<div class="ph"><b>Evidence basis</b><span class="grow"></span>${ui.basis.size ? '<button class="lnk" data-act="clearbasis">Clear</button>' : ''}</div><div class="pb tl">${rows}</div><p class="pn">How the triage says each finding is shown. Findings with any of the chosen values are shown.</p>`;
+  }
+  const basisChips = f => f.bases.map(b => `<button class="eb ${ui.basis.has(b) ? 'on' : ''}" data-basis="${esc(b)}" title="Evidence basis — filter">${esc(b)}</button>`).join('');
+  const statusTag = s => s === 'unsure' || s === 'escalate' ? `<span class="tag st-${s}" title="Status: ${STATUS[s]}">${STATUS[s]}</span>` : '';
 
   // the triage's Summary grid, drawn: colour rows by position columns; a cell, a row or a column filters the board
   function axisGrid() {
@@ -790,10 +838,10 @@
       const nq = st.queries.filter(q => q.finding === f.id).length;
       const brief = f.brief || (f.head ? '' : f.location);
       html += `<article class="card c-${f.colour} ${s ? 'is-' + s : ''} ${ui.sel === f.id ? 'is-sel' : ''}" data-id="${esc(f.id)}">
-        <div class="cm"><label class="chk" title="Confirm (C)"><input type="checkbox" data-act="confirm" ${s === 'confirmed' ? 'checked' : ''}></label><span class="fid">${fname(f)}</span>${posTag(f)}${f.conditional ? '<span class="tag">Conditional</span>' : ''}${f.with.length ? `<span class="tag">with #${f.with.join(', #')}</span>` : ''}${recoloured(f) && !f.custom ? `<span class="tag sev" title="Colour changed from the triage">${CNAME[f.colour0]}→${CNAME[f.colour]}</span>` : ''}${moved(f) ? `<span class="tag sev" title="Position changed from the triage">${f.pos0 ? PDOTS[f.pos0] : '–'}→${f.pos ? PDOTS[f.pos] : '–'}</span>` : ''}${f.custom ? '<span class="tag add" title="Added in the Auditonator; not in the audit">Added</span>' : ''}${(st.findings[f.id] || {}).note ? '<span class="tag note">Note</span>' : ''}<span class="qn" title="Author queries">${nq}&thinsp;Q</span><button class="x" data-act="dismiss" title="Dismiss (X)">✕</button></div>
+        <div class="cm"><label class="chk" title="Confirm (C)"><input type="checkbox" data-act="confirm" ${s === 'confirmed' ? 'checked' : ''}></label><span class="fid">${fname(f)}</span>${posTag(f)}${f.conditional ? '<span class="tag">Conditional</span>' : ''}${f.with.length ? `<span class="tag">with #${f.with.join(', #')}</span>` : ''}${recoloured(f) && !f.custom ? `<span class="tag sev" title="Colour changed from the triage">${CNAME[f.colour0]}→${CNAME[f.colour]}</span>` : ''}${moved(f) ? `<span class="tag sev" title="Position changed from the triage">${f.pos0 ? PDOTS[f.pos0] : '–'}→${f.pos ? PDOTS[f.pos] : '–'}</span>` : ''}${f.custom ? '<span class="tag add" title="Added in the Auditonator; not in the audit">Added</span>' : ''}${statusTag(s)}${(st.findings[f.id] || {}).note ? '<span class="tag note">Note</span>' : ''}<span class="qn" title="Author queries">${nq}&thinsp;Q</span><button class="x" data-act="dismiss" title="Dismiss (X)">✕</button></div>
         <h3>${inline(f.head || f.title)}</h3>
         ${brief ? `<p>${inline(brief)}</p>` : ''}
-        <div class="cf-row">${labelChips(f.id)}${typeChips(f)}${cardEnts(f)}</div>
+        <div class="cf-row">${labelChips(f.id)}${typeChips(f)}${basisChips(f)}${cardEnts(f)}</div>
       </article>`;
     });
     if (!v.length) html += `<div class="none">No findings match the filters.${filtering() ? ' <button class="lnk" data-act="clearfilters">Clear filters</button>' : ''}</div>`;
@@ -844,6 +892,8 @@
         <span class="d-xp"></span>
         ${f.custom ? `<button data-act="${ui.edit === f.id ? 'eddone' : 'edit'}" title="Edit this added finding">${ui.edit === f.id ? 'Done' : 'Edit'}</button>` : ''}
         <button class="act-c ${s === 'confirmed' ? 'on' : ''}" data-act="confirm" title="C">${s === 'confirmed' ? '✓ Confirmed' : 'Confirm'}</button>
+        <button class="act-u ${s === 'unsure' ? 'on' : ''}" data-act="unsure" title="Unsure: you cannot decide (U)">Unsure</button>
+        <button class="act-e ${s === 'escalate' ? 'on' : ''}" data-act="escalate" title="Escalate: to be passed on for someone else to decide (Shift+E)">Escalate</button>
         <button class="act-d ${s === 'dismissed' ? 'on' : ''}" data-act="dismiss" title="X">${s === 'dismissed' ? 'Dismissed' : 'Dismiss'}</button>
         <span class="nav"><button data-act="prev" ${i <= 0 ? 'disabled' : ''} title="Previous (↑)">↑</button><button data-act="next" ${i < 0 || i >= v.length - 1 ? 'disabled' : ''} title="Next (↓)">↓</button></span>
         <button class="close" data-act="closedetail" title="Close (Esc)">✕</button>
@@ -851,9 +901,9 @@
       <div class="d-scroll">
         ${ui.edit === f.id ? editor(f) : `<h2>${inline(f.title)}</h2>
         ${f.location ? `<div class="d-loc">${inline(f.location)}</div>` : ''}
-        <div class="d-ents">${typeChips(f)}${detailEnts(f)}</div>`}
+        <div class="d-ents">${typeChips(f)}${basisChips(f)}${detailEnts(f)}</div>`}
         <div class="d-labels">${labelChips(f.id, true)}<input class="lin" data-act="labelin" list="labelList" placeholder="+ Label" title="Type a label and press Enter (L)" autocomplete="off"><datalist id="labelList">${st.labels.filter(d => !labelsOf(f.id).includes(d.name)).map(d => `<option value="${esc(d.name)}"></option>`).join('')}</datalist></div>
-        ${!f.custom && ((f.brief && f.brief !== f.title) || f.with.length) ? `<div class="d-tri c-${f.colour}">${f.brief !== f.title ? inline(f.brief) : ''}${f.with.length ? ` <span class="tag">ranked with #${f.with.join(', #')}</span>` : ''}</div>` : ''}
+        ${!f.custom && ((f.brief && f.brief !== f.title) || f.with.length || f.basis) ? `<div class="d-tri c-${f.colour}">${f.brief !== f.title ? inline(f.brief) : ''}${f.with.length ? ` <span class="tag">ranked with #${f.with.join(', #')}</span>` : ''}${f.basis ? `<div class="d-eb"><b>Evidence basis:</b> ${esc(f.basis.values.join('; '))}${f.basis.covers ? ` — ${inline(f.basis.covers)}` : ''}</div>` : ''}</div>` : ''}
         ${f.body && ui.edit !== f.id ? `<div class="md d-body">${MD.render(f.body)}</div>` : ''}
         ${plotsOf(f.id).length ? `<section class="d-plots"><h4>Plots <span>${plotsOf(f.id).length}</span></h4>${plotsOf(f.id).map(p => `<a href="${p.url}" target="_blank" title="${esc(p.name)} — open full size"><img src="${p.url}" alt="${esc(p.name)}"></a>`).join('')}</section>` : ''}
         <section class="d-q">
@@ -1044,9 +1094,12 @@
     $('#qCount').innerHTML = `<b>${items.length}</b> queries from <b>${nf}</b> confirmed finding${nf === 1 ? '' : 's'}`;
     const qno = q => q.num ? `<span class="qno" title="Query number in the audit">Q${esc(q.num)}</span>` : '';
     const chip = id => { const f = model.map.get(id); return f ? `<button class="fchip c-${f.colour}" data-goto="${esc(id)}">${fname(f)}</button>` : ''; };
+    // a ribbon in the colour of the query's finding; ✕ unticks the query, as its tickbox on the finding does
+    const rib = q => { const f = model.map.get(q.finding); return `rib c-${f ? f.colour : 'none'}`; };
+    const off = q => `<button class="qoff" data-qoff="${esc(q.id)}" title="Leave this query out (tick it again on the finding to bring it back)">✕</button>`;
     $('#qList').innerHTML = items.length ? items.map(o => o.header
-      ? `<li><div class="qx">${inline(o.header)}</div><ul>${o.items.map((q, i) => `<li><span>${inline(q.text)}</span>${qno(q)}${i && o.items[i - 1].finding === q.finding ? '' : chip(q.finding)}</li>`).join('')}</ul></li>`
-      : `<li><span>${inline(o.items[0].text)}</span>${qno(o.items[0])}${chip(o.items[0].finding)}</li>`).join('')
+      ? `<li><div class="qx">${inline(o.header)}</div><ul>${o.items.map((q, i) => `<li class="${rib(q)}"><span>${inline(q.text)}</span>${qno(q)}${i && o.items[i - 1].finding === q.finding ? '' : chip(q.finding)}${off(q)}</li>`).join('')}</ul></li>`
+      : `<li class="${rib(o.items[0])}"><span>${inline(o.items[0].text)}</span>${qno(o.items[0])}${chip(o.items[0].finding)}${off(o.items[0])}</li>`).join('')
       : '<p class="muted">Confirm findings to build the query list.</p>';
   }
 
@@ -1247,7 +1300,7 @@
     if (e.target.closest('.chk') && e.target.tagName !== 'INPUT') return;
     if (ui.pop && !e.target.closest('.fdrop')) closePop();
     if (e.target.id === 'modal') return closeDetail();
-    const t = e.target.closest('[data-act],[data-cell],[data-pos],[data-colour],[data-status],[data-tab],[data-goto],[data-pdf],[data-sheet-i],[data-jump],[data-pop],[data-ent],[data-type],[data-entmode],[data-label],[data-lcol],[data-ldel],[data-lrm],[data-edtype],[data-md],a.pg,.card');
+    const t = e.target.closest('[data-act],[data-cell],[data-pos],[data-colour],[data-status],[data-tab],[data-goto],[data-pdf],[data-sheet-i],[data-jump],[data-pop],[data-ent],[data-type],[data-entmode],[data-label],[data-basis],[data-qoff],[data-lcol],[data-ldel],[data-lrm],[data-edtype],[data-md],a.pg,.card');
     if (!t) return;
     const act = t.dataset.act;
     const card = t.closest('.card');
@@ -1275,6 +1328,13 @@
     if (t.dataset.entmode) { ui.entMode = t.dataset.entmode; renderCards(); return renderDetail(); }
     if (act === 'clearents') { ui.ents.clear(); renderCards(); return renderDetail(); }
     if (t.dataset.label) { toggle(ui.labels, t.dataset.label); renderCards(); return renderDetail(); }
+    if (t.dataset.basis) { toggle(ui.basis, t.dataset.basis); renderCards(); return renderDetail(); }
+    if (act === 'clearbasis') { ui.basis.clear(); renderCards(); return renderDetail(); }
+    if (t.dataset.qoff) {
+      const x = st.queries.find(y => y.id === t.dataset.qoff);
+      if (x) { x.include = false; changed(); renderHeader(); renderQueries(); renderDetail(); toast('Query left out. Tick it again on its finding to bring it back'); }
+      return;
+    }
     if (t.dataset.lcol) { const d = st.labels.find(l => l.name === t.dataset.lcol); if (d) d.c = (d.c + 1) % LCOL.length; changed(); renderCards(); return renderDetail(); }
     if (t.dataset.ldel) return deleteLabel(t.dataset.ldel);
     if (t.dataset.lrm) return removeLabel(ui.sel, t.dataset.lrm);
@@ -1289,7 +1349,7 @@
     if (act === 'confirmall') return confirmAll();
     if (act === 'undoconfirmall') return undoConfirmAll();
     if (act === 'clearfilters') {
-      ui.ents.clear(); ui.types.clear(); ui.labels.clear(); ui.colours.clear(); ui.pos.clear(); ui.status = 'all'; ui.q = ''; $('#search').value = '';
+      ui.ents.clear(); ui.types.clear(); ui.labels.clear(); ui.basis.clear(); ui.colours.clear(); ui.pos.clear(); ui.status = 'all'; ui.q = ''; $('#search').value = '';
       renderCards(); return renderDetail();
     }
     if (act === 'closedetail') return closeDetail();
@@ -1310,7 +1370,7 @@
       return;
     }
     if (t.dataset.goto) return openDetail(t.dataset.goto);
-    if (act === 'confirm' || act === 'dismiss') { e.stopPropagation(); return setStatus(card ? card.dataset.id : ui.sel, act === 'confirm' ? 'confirmed' : 'dismissed'); }
+    if (act === 'confirm' || act === 'dismiss' || act === 'unsure' || act === 'escalate') { e.stopPropagation(); return setStatus(card ? card.dataset.id : ui.sel, { confirm: 'confirmed', dismiss: 'dismissed' }[act] || act); }
     if (act === 'sevreset') return revertRank(ui.sel);
     if (act === 'prev') return step(-1);
     if (act === 'next') return step(1);
@@ -1378,11 +1438,13 @@
     if (k === 'escape') { if (ui.pop) closePop(); else if (ui.open) closeDetail(); return; }
     if ((k === 'enter' || k === ' ') && e.target.closest('button, a, summary')) return;
     if (k === 'enter' || k === 'o') { e.preventDefault(); if (ui.open) closeDetail(); else if (ui.sel) openDetail(ui.sel); return; }
+    if (k === 'e' && e.shiftKey) { if (ui.sel) setStatus(ui.sel, 'escalate'); return; }
     if (k === 'e' || k === 't') { e.preventDefault(); if (ui.tab !== 'findings') document.querySelector('[data-tab="findings"]').click(); return openPop(k === 'e' ? 'entity' : 'type'); }
     if (k === 'arrowdown' || k === 'j') { e.preventDefault(); step(1); }
     else if (k === 'arrowup' || k === 'k') { e.preventDefault(); step(-1); }
     else if (k === 'c' || k === ' ') { e.preventDefault(); if (ui.sel) setStatus(ui.sel, 'confirmed'); }
     else if (k === 'x') { if (ui.sel) setStatus(ui.sel, 'dismissed'); }
+    else if (k === 'u') { if (ui.sel) setStatus(ui.sel, 'unsure'); }
     else if (/^[0-4]$/.test(k)) { const f = ui.sel && model.map.get(ui.sel); if (f) k === '0' ? (f.custom ? null : revertRank(f.id)) : setColour(f.id, COLOURS[+k - 1]); }
     else if (k === 'p') { ui.pdf = !ui.pdf; renderHeader(); renderPdf(); }
     else if (k === 'l') { e.preventDefault(); if (ui.sel) { if (!ui.open) openDetail(ui.sel); const i = document.querySelector('#detail .lin'); if (i) i.focus(); } }

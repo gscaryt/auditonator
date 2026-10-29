@@ -1,6 +1,5 @@
-// pipeline 1.4.1 | file changed 2026-10-15
 const Facets = (() => {
-  // ---------- entities: figures, tables, notes, source data, text sections ----------
+  // ---------- entities: figures, tables, notes, source data, code, text sections ----------
   const REF = /\b(?:(Supplementary(?:\s+Information)?|Suppl?\.|SI|Extended\s+Data|ED)\s+)?(Fig(?:ure)?s?\.?|Tables?|Notes?|Data)\s*(S?\d{1,3}[A-Za-z]{0,2}(?:\s*(?:,|and|&|–|-|to)\s*(?:S?\d{1,3}[A-Za-z]{0,2}|[A-Za-z]{1,2}(?!\w)))*)/g;
   const NOUN = { f: 'Fig.', t: 'Table', n: 'Note', d: 'Data' };
   const SCOPE = { '': '', ed: 'ED ', s: 'Supp. ' };
@@ -8,8 +7,13 @@ const Facets = (() => {
   const GROUPS = [
     ['f', 'Figures'], ['t', 'Tables'], ['edf', 'ED figures'], ['edt', 'ED tables'],
     ['sf', 'Supp. figures'], ['st', 'Supp. tables'], ['sn', 'Supp. notes'], ['sd', 'Supp. data'],
-    ['src', 'Source data'], ['x', 'Text']
+    ['src', 'Source data'], ['c', 'Code'], ['x', 'Text']
   ];
+  // code: "Supplementary Software 1", "Supplementary Code 2", or "Code 3 (analysis.py)" when the paper does not cite it;
+  // on a Related entities line also the role ("Code_3"; "Other_5 (config.py)" in audits before pipeline 1.5.0), and a bare "code"
+  const ROLE = /\b(Code|Other)_(\d{1,3})\b(?:\s*\(([^)\n;]{1,80})\))?/g;
+  const CODE_EXT = /\.(?:py|r|rmd|qmd|ipynb|m|jl|do|ado|sas|sh|stan|c|cpp|h|java|js|ts|f90|pl|rb|go|rs|sql)$/i;
+  const CODE = /\b(?:(Supplementary)\s+)?(Software|Code)\s+(\d{1,3})\b(?:\s*\(([^)\n;]{1,80})\))?/g;
   const SECTIONS = [
     ['Abstract', /\bAbstract\b/], ['Introduction', /\bIntroduction\b/], ['Results', /\bResults\b/],
     ['Discussion', /\bDiscussion\b/], ['Methods', /\bMethods\b/], ['Legends', /\blegends?\b/i],
@@ -48,7 +52,7 @@ const Facets = (() => {
   }
 
   function label(key) {
-    if (key.startsWith('x:')) return key.slice(2);
+    if (key.startsWith('x:') || key.startsWith('c:')) return key.slice(2);
     const m = key.match(/^(src:)?(ed|s)?([ftnd])(\d+)$/);
     if (!m) return key;
     return `${SCOPE[m[2] || '']}${NOUN[m[3]]} ${m[4]}`;
@@ -57,6 +61,7 @@ const Facets = (() => {
   function group(key) {
     if (key.startsWith('src:')) return 'src';
     if (key.startsWith('x:')) return 'x';
+    if (key.startsWith('c:')) return 'c';
     const m = key.match(/^(ed|s)?([ftnd])/);
     return (m[1] || '') + m[2];
   }
@@ -64,14 +69,28 @@ const Facets = (() => {
   function sortKey(key) {
     const g = GROUPS.findIndex(x => x[0] === group(key));
     if (key.startsWith('x:')) return g * 1e4 + SECTIONS.findIndex(s => s[0] === key.slice(2));
+    if (key.startsWith('c:')) { const n = key.match(/(\d+)/); return g * 1e4 + (/^c:Supplementary/.test(key) ? 0 : 1e3) + (n ? +n[1] : 999); }
     const m = key.match(/^(?:src:)?(ed|s)?([ftnd])(\d+)$/);
     const sub = key.startsWith('src:') ? ['', 'ed', 's'].indexOf(m[1] || '') * 1e3 + 'ftnd'.indexOf(m[2]) * 100 : 0;
     return g * 1e4 + sub + +m[3];
   }
 
-  function entities(text) {
+  function code(text, line) {
+    const keys = [];
+    for (const m of text.matchAll(CODE)) if (m[1] || m[2] === 'Code') keys.push(`c:${m[1] ? 'Supplementary ' + m[2] : 'Code'} ${m[3]}`);
+    if (line) for (const m of text.matchAll(ROLE)) {
+      if (m[1] === 'Code') keys.push(`c:Code ${m[2]}`);
+      else if (m[3] && CODE_EXT.test(m[3].trim())) keys.push(`c:${m[3].trim()}`);
+    }
+    if (line && !keys.length && /\bcode\b/i.test(text)) keys.push('c:Code');
+    return keys;
+  }
+
+  // line: the text is a Related entities line, not the wording of a finding
+  function entities(text, line) {
     const keys = new Set();
     refs(text).forEach(r => { keys.add(r.key); if (r.src) keys.add('src:' + r.key); });
+    code(text, line).forEach(k => keys.add(k));
     SECTIONS.forEach(([name, re]) => { if (re.test(text)) keys.add('x:' + name); });
     return [...keys].sort((a, b) => sortKey(a) - sortKey(b));
   }
