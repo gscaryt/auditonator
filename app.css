@@ -379,8 +379,11 @@ a.pg:hover { text-decoration-style: solid; }
 .pdf-tabs { display: flex; flex-wrap: wrap; gap: 3px; flex: 1; min-width: 0; }
 .pdf-tabs button { height: 24px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); padding: 0 8px; font-size: 11.5px; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .pdf-tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
-.pdf-bar label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
-.pdf-bar input { width: 52px; height: 24px; border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; background: var(--panel); }
+/* more open files than tabs: a tab with two cards peeking out behind it */
+.pdf-tabs button.stack { margin-right: 7px; color: var(--ink-2); font-weight: 600; font-variant-numeric: tabular-nums; overflow: visible;
+  box-shadow: 4px 0 0 -2px var(--panel), 4px 0 0 -1px var(--line-2), 9px 0 0 -4px var(--panel), 9px 0 0 -3px var(--line-2); }
+.pdf-tabs button.stack:hover, .pdf-tabs button.stack.open { border-color: var(--accent); color: var(--accent);
+  box-shadow: 4px 0 0 -2px var(--panel), 4px 0 0 -1px var(--accent), 9px 0 0 -4px var(--panel), 9px 0 0 -3px var(--accent); }
 .pdf-bar > .x { opacity: 1; }
 .pdf-more, .sh-more { position: relative; display: flex; gap: 3px; flex: none; align-self: flex-start; }
 .pdf-more button, .lst { height: 24px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); padding: 0 8px; font-size: 11.5px; white-space: nowrap; color: var(--ink-2); }

@@ -169,7 +169,7 @@
     return {
       app: 'auditonator', v: 1, appVersion: APP_VERSION, savedAt: new Date().toISOString(), msid: model ? model.msid : '',
       audit: { name: src.auditName, text: src.audit }, critical: { name: src.criticalName, text: src.critical }, data: src.data ? { name: src.dataName, json: src.data } : null,
-      pdfs: pdfs.map(p => ({ name: p.name, offset: p.offset })),
+      pdfs: pdfs.map(p => ({ name: p.name })),
       state: st, ui: { sel: ui.sel }
     };
   }
@@ -181,7 +181,6 @@
     pdfs.forEach(freeDoc);
     pdfs = []; fileHandle = null; dropPlots();
     const want = (s.pdfs || []).map(p => p.name);
-    restore.offsets = Object.fromEntries((s.pdfs || []).map(p => [p.name, p.offset || 0]));
     ui.sel = s.ui && s.ui.sel;
     build(); render();
     dirty = false;
@@ -331,7 +330,7 @@
     const i = pdfs.findIndex(p => p.name === file.name);
     const p = SHEET_EXT.test(file.name)
       ? { id: ++docSeq, name: file.name, kind: 'sheet', sheet: 0, book: Sheet.open(file) }
-      : { id: ++docSeq, name: file.name, kind: DOCX_EXT.test(file.name) ? 'docx' : 'pdf', role: roleOf(file.name), offset: (restore.offsets || {})[file.name] || 0 };
+      : { id: ++docSeq, name: file.name, kind: DOCX_EXT.test(file.name) ? 'docx' : 'pdf', role: roleOf(file.name) };
     if (p.kind === 'docx') { p.doc = Docx.open(file); p.doc.catch(() => { }); }
     else if (p.kind === 'pdf') p.url = URL.createObjectURL(file);
     if (p.book) p.book.then(b => { p.sheets = b.sheets; if (ui.open) renderDetail(); }, () => { });
@@ -705,7 +704,7 @@
     ui.pdf = true;
     const docs = pdfs.filter(isText), cur = pdfs[pdfIdx];
     const p = docs.find(x => x.role === role) || (role === 'si' && cur && isText(cur) && cur) || docs.find(x => x.role === 'main') || docs[0];
-    if (p) { pdfIdx = pdfs.indexOf(p); p.page = Math.max(1, n - (p.offset || 0)); }
+    if (p) { pdfIdx = pdfs.indexOf(p); p.page = Math.max(1, n); }
     renderHeader();
     renderPdf(true);
   }
@@ -1209,8 +1208,6 @@
       + (pdfs.length ? `<button class="lst ${ui.list === 'files' ? 'open' : ''}" data-list="files" title="Open files: switch to one or close it">☰ ${pdfs.length}</button>` : '');
     fitTabs();
     if (ui.list === 'files') renderList();
-    $('#pdfOffset').value = p ? p.offset || 0 : 0;
-    $('#pdfOffsetWrap').hidden = !p || !isText(p);
     $('#docView').hidden = !p || p.kind !== 'docx';
     $('#sheetView').hidden = !p || p.kind !== 'sheet';
     const frame = $('#pdfFrame');
@@ -1237,17 +1234,38 @@
     return s.replace(/_v\d+$/, '').replace(/_+/g, ' ').trim() || name;
   }
 
-  // the file tabs on at most two rows; the others hidden, the active one always shown, in place of the last if need be
+  // the file tabs on at most two rows; the others hidden, the active one always shown, in place of the last if need be;
+  // a stacked "+n more" tab ends the rows when any are hidden, and opens the list of open files
   function fitTabs() {
-    const tabs = [...$('#pdfTabs').children];
+    const box = $('#pdfTabs');
+    box.querySelectorAll('.stack').forEach(b => b.remove());
+    const tabs = [...box.children];
     tabs.forEach(b => { b.hidden = false; });
     if (!tabs.length || !tabs[0].offsetParent) return;
     const tops = [...new Set(tabs.map(b => b.offsetTop))].sort((a, b) => a - b), limit = tops[Math.min(1, tops.length - 1)];
     tabs.forEach(b => { if (b.offsetTop > limit) b.hidden = true; });
     const on = tabs[pdfIdx];
-    if (!on || !on.hidden) return;
-    on.hidden = false;
-    for (let i = pdfIdx - 1; i >= 0 && on.offsetTop > limit; i--) if (!tabs[i].hidden) tabs[i].hidden = true;
+    if (on && on.hidden) {
+      on.hidden = false;
+      for (let i = pdfIdx - 1; i >= 0 && on.offsetTop > limit; i--) if (!tabs[i].hidden) tabs[i].hidden = true;
+    }
+    if (!tabs.some(b => b.hidden)) return;
+    const stack = document.createElement('button');
+    stack.className = `stack ${ui.list === 'files' ? 'open' : ''}`;
+    stack.dataset.list = 'files';
+    box.append(stack);
+    const label = () => {
+      const n = tabs.filter(b => b.hidden).length;
+      stack.textContent = `+${n} more`;
+      stack.title = `${n} more open file${n === 1 ? '' : 's'} without a tab: click to list them all`;
+    };
+    label();
+    while (stack.offsetTop > limit) {
+      const last = tabs.filter(b => !b.hidden && b !== on).pop();
+      if (!last) break;
+      last.hidden = true;
+      label();
+    }
   }
   fitTabs.width = 0;
   new ResizeObserver(() => {
@@ -1615,7 +1633,6 @@
     }
     if (t.dataset.act === 'sev' && ui.sel) setColour(ui.sel, t.value);
     if (t.dataset.act === 'posn' && ui.sel) setPosition(ui.sel, t.value);
-    if (t.id === 'pdfOffset' && pdfs[pdfIdx]) { pdfs[pdfIdx].offset = +t.value || 0; changed(); }
   });
 
   document.addEventListener('input', e => {
