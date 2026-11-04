@@ -9,7 +9,7 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="logo"><i></i><i></i><i></i><i></i></span>Auditonator</div>
+  <div class="brand"><span class="logo"><i></i><i></i><i></i><i></i></span>Auditonator<span class="ver" id="appVer"></span></div>
   <div class="ms"><b id="msid"></b><span id="mstitle"></span></div>
   <div class="files" id="files"></div>
   <div class="actions">
@@ -62,6 +62,7 @@
   <section class="pdf-pane" id="pdfPane" hidden>
     <div class="pdf-bar">
       <div class="pdf-tabs" id="pdfTabs"></div>
+      <div class="pdf-more"><span id="pdfMoreBtns"></span><div class="pop lpop" id="filesPop" tabindex="-1" hidden></div></div>
       <label id="pdfOffsetWrap" title="Printed page number minus PDF page number">Offset <input id="pdfOffset" type="number" step="1"></label>
       <button class="x" data-act="closepdf" title="Close viewer (P)">✕</button>
     </div>
@@ -75,7 +76,7 @@
       <div class="sh-bar"><span class="sh-cell" id="shCell"></span><input id="shFind" type="search" placeholder="Find in sheet  ↵" autocomplete="off"><span class="sh-n" id="shFindN"></span></div>
       <div class="sh-key" id="shKey" hidden></div>
       <div class="sh-grid" id="shGrid"></div>
-      <div class="sh-foot"><div class="sh-tabs" id="shTabs"></div><span class="sh-note" id="shNote"></span></div>
+      <div class="sh-foot"><div class="sh-tabs" id="shTabs"></div><div class="sh-more"><button class="lst" id="shList" data-list="sheets" title="All sheets of this workbook" hidden></button><div class="pop lpop up" id="sheetsPop" tabindex="-1" hidden></div></div><span class="sh-note" id="shNote"></span></div>
     </div>
   </section>
 </main>
@@ -89,13 +90,15 @@
     <button class="btn primary" data-act="loadfolder">Select folder</button>
     <button class="btn" data-act="load">Select files or ZIP</button>
     <div id="resume"></div>
-    <p class="credit">Auditonator and the manuscript consistency audit by Gustavo Tontini</p>
+    <p class="credit">Auditonator <span id="creditVer"></span> and the manuscript consistency audit by Gustavo Tontini</p>
   </div>
 </div>
 
 <div class="dropzone">Drop to load</div>
 <div id="toast" class="toast"></div>
+<div class="rmenu" id="rmenu" role="menu" hidden></div>
 
+<script src="js/version.js"></script>
 <script src="js/md.js"></script>
 <script src="js/parse.js"></script>
 <script src="js/facets.js"></script>

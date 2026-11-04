@@ -81,6 +81,7 @@ code { font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; background
 /* header */
 .top { display: flex; align-items: center; gap: 14px; padding: 7px 14px; background: var(--panel); border-bottom: 1px solid var(--line); min-width: 0; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: -.01em; font-size: 14px; }
+.ver { margin-left: -3px; font-size: 10.5px; font-weight: 500; color: var(--muted); letter-spacing: 0; font-variant-numeric: tabular-nums; cursor: default; }
 .logo { display: grid; grid-template-columns: 8px 8px; gap: 2px; }
 .logo i { width: 8px; height: 8px; border-radius: 2px; }
 .logo i:nth-child(1) { background: var(--black); box-shadow: inset 0 0 0 1px var(--line-2); }
@@ -190,7 +191,17 @@ main.with-pdf { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.15fr); }
 .d-bar .pos { font-size: 12px; letter-spacing: 0; font-weight: 600; }
 .lead { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
 .lead > .axes { flex: none; max-width: 100%; overflow-x: auto; }
-.lead > .main { flex: 1; min-width: min(100%, 220px); }
+.lead-col { flex: 1; min-width: min(100%, 220px); }
+/* general notes */
+.gs { margin-left: 6px; font-size: 10.5px; font-weight: 600; padding: 0 6px; border-radius: 8px; line-height: 16px; display: inline-block; background: var(--yellow-soft); color: color-mix(in srgb, var(--yellow) 70%, var(--ink)); box-shadow: inset 0 0 0 1px var(--yellow); }
+.gs.ok { background: var(--green-soft); color: color-mix(in srgb, var(--green) 70%, var(--ink)); box-shadow: inset 0 0 0 1px var(--green); }
+.gbody { padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 10px; }
+.gq p { margin: 0 0 5px; font-size: 12.5px; color: var(--ink); }
+.gopts { display: flex; flex-wrap: wrap; gap: 4px; }
+.gopts button { height: 24px; padding: 0 9px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--panel); font-size: 11.5px; color: var(--ink-2); }
+.gopts button:hover { border-color: var(--accent); color: var(--accent); }
+.gopts button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.gbody textarea { width: 100%; resize: vertical; border: 1px solid var(--line-2); border-radius: 7px; padding: 7px 9px; background: var(--panel); font-size: 12.5px; }
 .axes table { border-collapse: separate; border-spacing: 3px; margin: 5px 7px 7px; }
 .axes th, .axes td { padding: 0; font-weight: 600; }
 .axes button { width: 100%; height: 26px; padding: 0 9px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--ink-2); font: inherit; font-size: 11.5px; font-weight: 600; white-space: nowrap; display: flex; align-items: center; gap: 5px; }
@@ -231,6 +242,8 @@ main.with-pdf { grid-template-columns: minmax(360px, 1fr) minmax(0, 1.15fr); }
 .tag.sev { background: var(--cs); color: var(--ink); box-shadow: inset 0 0 0 1px var(--c); }
 .tag.st-unsure { color: var(--s7); box-shadow: inset 0 0 0 1px var(--s7); background: var(--panel); }
 .tag.st-escalate { color: #fff; background: var(--s2); box-shadow: none; }
+.tag.st-dismissed { color: var(--ink-2); background: var(--panel); }
+.tag.st-unsure, .tag.st-dismissed { min-width: 0; max-width: 190px; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
 .qn { margin-left: auto; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .card h3 { margin: 0; font-size: 13.5px; font-weight: 600; line-height: 1.38; }
 .card p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
@@ -289,6 +302,8 @@ select.pill option { background: var(--panel); color: var(--ink); text-transform
 .d-bar .act-u:hover, .d-bar .act-u.on { border-color: var(--s7); color: var(--s7); }
 .d-bar .act-u.on { background: color-mix(in srgb, var(--s7) 14%, var(--panel)); }
 .d-bar .act-e:hover { border-color: var(--s2); color: var(--s2); }
+.d-bar .rbtn { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.d-bar .rbtn span { max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
 .d-bar .act-e.on { background: var(--s2); border-color: var(--s2); color: #fff; }
 .nav { display: flex; }
 .nav button { width: 30px; padding: 0; }
@@ -361,12 +376,31 @@ a.pg:hover { text-decoration-style: solid; }
 /* pdf */
 .pdf-pane { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--sunk); }
 .pdf-bar { display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.pdf-tabs { display: flex; gap: 3px; flex: 1; min-width: 0; overflow-x: auto; }
+.pdf-tabs { display: flex; flex-wrap: wrap; gap: 3px; flex: 1; min-width: 0; }
 .pdf-tabs button { height: 24px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); padding: 0 8px; font-size: 11.5px; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .pdf-tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .pdf-bar label { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 .pdf-bar input { width: 52px; height: 24px; border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; background: var(--panel); }
-.pdf-bar .x { opacity: 1; }
+.pdf-bar > .x { opacity: 1; }
+.pdf-more, .sh-more { position: relative; display: flex; gap: 3px; flex: none; align-self: flex-start; }
+.pdf-more button, .lst { height: 24px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); padding: 0 8px; font-size: 11.5px; white-space: nowrap; color: var(--ink-2); }
+.lst { font-weight: 600; font-variant-numeric: tabular-nums; }
+.pdf-more button:hover, .lst:hover, .lst.open { border-color: var(--accent); color: var(--accent); }
+.sh-more .lst { height: 22px; }
+/* the list of open files, and of a workbook's sheets */
+.lpop { left: auto; right: 0; width: min(340px, calc(100vw - 32px)); max-height: min(60vh, 480px); outline: none; }
+.lpop.up { top: auto; bottom: calc(100% + 5px); }
+.lq { flex: 1; height: 26px; border: 1px solid var(--line-2); border-radius: 6px; padding: 0 8px; background: var(--panel); }
+.lq:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.lg { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 8px 8px 3px; }
+.lrow { display: flex; align-items: center; gap: 6px; padding: 4px 4px 4px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.lrow span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.lrow em { font-style: normal; font-size: 10.5px; color: var(--accent); font-weight: 600; }
+.lrow.cur span { font-weight: 600; color: var(--accent); }
+.lrow:hover, .lrow.at { background: var(--sunk); }
+.lrow.at { box-shadow: inset 0 0 0 1px var(--line-2); }
+.lrow .x { opacity: .5; }
+.lrow:hover .x, .lrow.at .x { opacity: 1; }
 .pdf-empty { flex: 1; display: grid; place-items: center; }
 #pdfFrame { flex: 1; width: 100%; border: 0; background: var(--sunk); }
 
@@ -465,6 +499,20 @@ a.pg.cell { font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .sh-tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .sh-tabs button.hid { font-style: italic; color: var(--muted); }
 .sh-note { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.sh-more { align-self: center; }
+/* the reason menu of Dismiss and Unsure */
+.rmenu { position: fixed; z-index: 55; width: 250px; padding: 4px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 9px; box-shadow: 0 12px 32px rgba(16, 24, 40, .18), 0 2px 6px rgba(16, 24, 40, .08); }
+.rh { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; padding: 5px 8px 4px; }
+.ro { position: relative; display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; padding: 5px 8px; border-radius: 6px; text-align: left; font-size: 12.5px; }
+.ro:hover { background: var(--sunk); }
+.ro kbd { margin: 0; min-width: 18px; text-align: center; }
+.ro span { flex: 1; }
+.ro.on span { font-weight: 600; color: var(--accent); }
+.ro.on::after { content: "✓"; color: var(--accent); font-weight: 700; }
+.ro.reopen { border-top: 1px solid var(--line); border-radius: 0 0 6px 6px; margin-top: 3px; color: var(--muted); }
+.ro .tip { display: none; position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); width: 240px; padding: 7px 10px; border-radius: 7px; background: var(--ink); color: var(--panel); font-style: normal; font-size: 11.5px; line-height: 1.4; box-shadow: var(--shadow); pointer-events: none; }
+.rmenu.flip .ro .tip { left: auto; right: calc(100% + 10px); }
+.ro:hover .tip { display: block; }
 .qlist .qno { margin-left: 6px; }
 
 /* labels: an outlined chip with a coloured dot; colour stays quiet so it never competes with the triage */
@@ -486,6 +534,8 @@ a.pg.cell { font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .lr .x { opacity: .55; }
 .lr .x:hover { opacity: 1; }
 .fdrop[data-dim="label"] .pop { width: 280px; }
+.ladd { font-size: 16px; font-weight: 600; line-height: 1; padding: 0 4px; }
+.lnew { flex: 1; height: 26px; border: 1px solid var(--accent); border-radius: 6px; padding: 0 8px; background: var(--panel); outline: 2px solid var(--accent-soft); }
 .d-labels { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: -6px 0 14px; }
 .lin { width: 110px; height: 22px; border: 1px dashed var(--line-2); border-radius: 11px; padding: 0 9px; background: none; font-size: 11.5px; }
 .lin:focus { width: 180px; border-style: solid; border-color: var(--accent); outline: 2px solid var(--accent-soft); }

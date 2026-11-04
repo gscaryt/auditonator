@@ -48,7 +48,7 @@
   const isText = p => p.kind === 'pdf' || p.kind === 'docx';
   const freeDoc = p => { if (p.url) URL.revokeObjectURL(p.url); if (p.doc) p.doc.then(d => d.urls.forEach(u => URL.revokeObjectURL(u)), () => { }); };
   const VIEW_ACCEPT = '.pdf,.docx,.xlsx,.xlsm,.xls,.ods,.csv,.tsv';
-  const ui = { tab: 'findings', sel: null, colours: new Set(), status: 'all', q: '', ents: new Set(), entMode: 'any', types: new Set(), labels: new Set(), basis: new Set(), pos: new Set(), pop: null, open: false, edit: null, pdf: false, claimOpen: false, axesOpen: true };
+  const ui = { tab: 'findings', sel: null, colours: new Set(), status: 'all', q: '', ents: new Set(), entMode: 'any', types: new Set(), labels: new Set(), basis: new Set(), pos: new Set(), pop: null, open: false, edit: null, pdf: false, claimOpen: false, axesOpen: true, notesOpen: false, reason: null, list: null, listQ: '', listAt: 0, newLabel: false };
 
   const plain = s => s.replace(/<[^>]+>/g, '').replace(/\*\*(.+?)\*\*/g, '$1').replace(/(^|[^*\w])\*(?!\s)(.+?)\*(?!\w)/g, '$1$2').replace(/`([^`]+)`/g, '$1');
   const fstate = id => st.findings[id] || (st.findings[id] = {});
@@ -59,6 +59,25 @@
   const custom = id => (st.custom || []).find(u => u.id === id);
   // the review statuses; only confirmed findings send their queries
   const STATUS = { confirmed: 'Confirmed', dismissed: 'Dismissed', unsure: 'Unsure', escalate: 'Escalate' };
+  // why a finding is dismissed or left unsure: [key, label, explanation]; the key is saved
+  const REASONS = {
+    dismissed: [['incorrect', 'Incorrect', 'The finding is factually or analytically wrong.'],
+      ['unsupported', 'Unsupported', 'Finding is not convincingly supported by the presented evidence.'],
+      ['duplicate', 'Duplicate / overlaps', 'Already covered by another finding.'],
+      ['notactionable', 'Valid but not actionable', 'Observation may be correct, but it does not support a useful RIG action or author query.'],
+      ['other', 'Other', 'Different reason applies. Please use Notes to explain.']],
+    unsure: [['knowledge', 'Insufficient subject knowledge', 'Specialist scientific, statistical or technical knowledge is needed.'],
+      ['evidence', 'Insufficient evidence or files', 'The source material needed to make a decision is not available.'],
+      ['other', 'Other', 'Different reason applies. Please use Notes to explain.']]
+  };
+  const reasonOf = id => { const v = st.findings[id] || {}, r = (REASONS[v.s] || []).find(x => x[0] === v.reason); return r ? r[1] : ''; };
+  // the user's notes on the audit as a whole: [question, answers]
+  const GENERAL = {
+    missed: ['Did you find anything substantive in the manuscript that DataProof did not raise? (If yes, please comment below)', ['Yes', 'No']],
+    effect: ['Overall, did DataProof make your work on this manuscript easier or more effective?', ['Yes, substantially', 'Yes, somewhat', 'No meaningful difference', 'It made the work harder but with benefits', 'It made the work harder with no benefits']]
+  };
+  const general = () => st.general || (st.general = {});
+  const generalGiven = () => { const g = st.general || {}; return !!(g.missed || g.effect || (g.note || '').trim()); };
   const BASES = ['Recomputed', 'Text against text', 'Identical values', 'Statistical pattern', 'Outside fact'];
   // the findings data, used for the board when it belongs to the loaded audit (same run tag), or when no audit file is loaded
   const useData = () => !!src.data && (!src.audit || src.auditName.includes(`-Audit_${src.data.tag}.`));
@@ -148,7 +167,7 @@
 
   function snapshot() {
     return {
-      app: 'auditonator', v: 1, savedAt: new Date().toISOString(), msid: model ? model.msid : '',
+      app: 'auditonator', v: 1, appVersion: APP_VERSION, savedAt: new Date().toISOString(), msid: model ? model.msid : '',
       audit: { name: src.auditName, text: src.audit }, critical: { name: src.criticalName, text: src.critical }, data: src.data ? { name: src.dataName, json: src.data } : null,
       pdfs: pdfs.map(p => ({ name: p.name, offset: p.offset })),
       state: st, ui: { sel: ui.sel }
@@ -275,7 +294,7 @@
     if (!d.json.findings.length) { toast(`No findings in ${d.name}`); return true; }
     src.data = d.json; src.dataName = d.name;
     if (st && st.msid === d.json.msid && (src.audit || st.queries.length)) return true;
-    const progress = st && (Object.values(st.findings).some(v => v.s || v.note || v.colour || (v.labels || []).length) || (st.custom || []).length);
+    const progress = st && (Object.values(st.findings).some(v => v.s || v.note || v.colour || (v.labels || []).length) || (st.custom || []).length || generalGiven());
     if (progress && !confirm(`Replace the current work on ${model.msid} with ${d.json.msid || d.name}?`)) { src.data = null; src.dataName = ''; return false; }
     st = freshState(Parse.fromData(d.json).A);
     return true;
@@ -287,7 +306,7 @@
     if (st && src.audit === m.text) return true;
     // the audit file of the run whose findings data already hold the work
     if (st && src.data && st.msid === A.msid && m.name.includes(`-Audit_${src.data.tag}.`)) { src.audit = m.text; src.auditName = m.name; return true; }
-    const progress = st && (Object.values(st.findings).some(v => v.s || v.note || v.colour || (v.labels || []).length) || (st.custom || []).length);
+    const progress = st && (Object.values(st.findings).some(v => v.s || v.note || v.colour || (v.labels || []).length) || (st.custom || []).length || generalGiven());
     if (progress && !confirm(`Replace the current work on ${model.msid} with ${A.msid || m.name}?`)) return false;
     if (st && st.msid && st.msid !== A.msid) {
       src.critical = ''; src.criticalName = ''; src.data = null; src.dataName = ''; fileHandle = null; dropPlots();
@@ -388,9 +407,10 @@
 
   function exportXlsx() {
     const items = exportItems();
-    const notes = model.order.filter(f => (((st.findings[f.id] || {}).note || '').trim() || reranked(f) || labelsOf(f.id).length || ['unsure', 'escalate'].includes(status(f.id))));
+    const notes = model.order.filter(f => (((st.findings[f.id] || {}).note || '').trim() || reranked(f) || labelsOf(f.id).length || ['unsure', 'escalate', 'dismissed'].includes(status(f.id))));
     const added = model.order.filter(f => f.custom);
-    if (!items.length && !notes.length && !added.length) return toast('Nothing to export: confirm findings or add notes first');
+    if (!items.length && !notes.length && !added.length && !generalGiven()) return toast('Nothing to export: confirm findings or add notes first');
+    const g = st.general || {};
     const rows = items.map((o, i) => {
       const ids = [...new Set(o.items.map(q => q.finding))];
       const fs = ids.map(id => model.map.get(id)).filter(Boolean);
@@ -409,27 +429,66 @@
       plain(f.head || f.title),
       ...rankCells(f),
       f.conditional ? 'Yes' : '', typeCell(f), basisCell(f), entsCell(f),
-      STATUS[status(f.id)] || 'Open',
+      STATUS[status(f.id)] || 'Open', reasonOf(f.id),
       labelsOf(f.id).join(', '),
       ((st.findings[f.id] || {}).note || '').trim()
     ]);
     const arows = added.map(f => [
       fname(f), plain(f.title), CNAME[f.colour], PNAME[f.pos] || '', '', typeCell(f), '', entsCell(f),
-      plain(f.body), STATUS[status(f.id)] || 'Open', labelsOf(f.id).join(', ')
+      plain(f.body), STATUS[status(f.id)] || 'Open', reasonOf(f.id), labelsOf(f.id).join(', ')
     ]);
     download(XLSX.build([
       { name: 'Author queries', header: ['No.', 'Author query', 'Finding', 'Related entities', ...RANK_HEAD], rows, widths: [6, 110, 12, 30, 14, 14, 14, 14] },
-      { name: 'Internal notes', header: ['Finding', 'Title', ...RANK_HEAD, 'Conditional', 'Finding type', 'Evidence basis', 'Related entities', 'Status', 'User labels', 'User note'], rows: nrows, widths: [9, 50, 14, 14, 14, 14, 11, 22, 40, 30, 11, 22, 80] },
-      ...(arows.length ? [{ name: 'Added findings', header: ['Finding', 'Title', 'Colour', 'Position', 'Conditional', 'Finding type', 'Evidence basis', 'Related entities', 'Description', 'Status', 'User labels'], rows: arows, widths: [9, 50, 10, 12, 11, 20, 20, 30, 90, 11, 22] }] : [])
+      { name: 'Internal notes', header: ['Finding', 'Title', ...RANK_HEAD, 'Conditional', 'Finding type', 'Evidence basis', 'Related entities', 'Status', 'Reason', 'User labels', 'User note'], rows: nrows, widths: [9, 50, 14, 14, 14, 14, 11, 22, 40, 30, 11, 24, 22, 80] },
+      ...(arows.length ? [{ name: 'Added findings', header: ['Finding', 'Title', 'Colour', 'Position', 'Conditional', 'Finding type', 'Evidence basis', 'Related entities', 'Description', 'Status', 'Reason', 'User labels'], rows: arows, widths: [9, 50, 10, 12, 11, 20, 20, 30, 90, 11, 24, 22] }] : []),
+      { name: 'General notes', header: ['Manuscript', 'Run', 'Auditonator version', GENERAL.missed[0], GENERAL.effect[0], 'Notes'], rows: [[model.msid, runTag().slice(1) || model.run.run || '', APP_VERSION, g.missed || '', g.effect || '', (g.note || '').trim()]], widths: [18, 22, 20, 45, 45, 80] }
     ]), `${model.msid || 'audit'}-Author_Queries${runTag()}.xlsx`);
-    toast(`Exported ${items.length} quer${items.length === 1 ? 'y' : 'ies'} · ${notes.length} note${notes.length === 1 ? '' : 's'}${added.length ? ` · ${added.length} added finding${added.length === 1 ? '' : 's'}` : ''}`);
+    toast(`Exported ${items.length} quer${items.length === 1 ? 'y' : 'ies'} · ${notes.length} note${notes.length === 1 ? '' : 's'}${added.length ? ` · ${added.length} added finding${added.length === 1 ? '' : 's'}` : ''}${generalGiven() ? ' · general notes' : ''}`);
   }
 
   // ---------- actions ----------
-  function setStatus(id, s) {
+  // Confirm and Escalate toggle and clear the reason; Dismiss and Unsure are set from the reason menu, with a reason
+  function setStatus(id, s, reason) {
     const f = fstate(id);
-    f.s = f.s === s ? null : s;
+    f.s = reason !== undefined ? s : f.s === s ? null : s;
+    if (reason && f.s) f.reason = reason; else delete f.reason;
     changed(); render();
+  }
+
+  // ---------- reason menu ----------
+  // opens under the details button, or under the card's ✕ when the details are closed
+  function openReason(id, kind) {
+    if (!id) return;
+    const act = kind === 'dismissed' ? 'dismiss' : 'unsure';
+    const at = (ui.open && document.querySelector(`#detail [data-act="${act}"]`)) || document.querySelector(`.card[data-id="${CSS.escape(id)}"] .x`);
+    ui.reason = { id, kind };
+    const m = $('#rmenu'), cur = (st.findings[id] || {}).s === kind ? st.findings[id].reason || '' : null;
+    m.innerHTML = `<div class="rh">${kind === 'dismissed' ? 'Dismiss' : 'Unsure'}: why?</div>`
+      + REASONS[kind].map(([k, label, tip], i) => `<button class="ro ${cur === k ? 'on' : ''}" data-reason="${k}"><kbd>${i + 1}</kbd><span>${esc(label)}</span><i class="tip">${esc(tip)}</i></button>`).join('')
+      + (cur !== null ? `<button class="ro reopen" data-reason=""><kbd>${REASONS[kind].length + 1}</kbd><span>Reopen</span><i class="tip">Clears the status and the reason.</i></button>` : '');
+    m.hidden = false;
+    const r = at ? at.getBoundingClientRect() : { left: innerWidth / 2 - 120, bottom: innerHeight / 3, right: innerWidth / 2 + 120 }, w = m.offsetWidth, h = m.offsetHeight;
+    const left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8));
+    m.style.left = `${left}px`;
+    m.style.top = `${Math.max(8, r.bottom + h + 8 > innerHeight ? r.top - h - 4 : r.bottom + 4)}px`;
+    m.classList.toggle('flip', left + w + 270 > innerWidth);
+  }
+  function closeReason() { ui.reason = null; $('#rmenu').hidden = true; }
+
+  function pickReason(key) {
+    const r = ui.reason;
+    if (!r) return;
+    closeReason();
+    if (key === '') return setStatus(r.id, null, null);
+    setStatus(r.id, r.kind, key);
+    if (key !== 'other') return;
+    if (!ui.open || ui.sel !== r.id) openDetail(r.id);
+    const ta = document.querySelector('#detail textarea[data-act="note"]');
+    if (!ta) return;
+    const show = () => { if (document.activeElement === ta) ta.scrollIntoView({ block: 'nearest' }); };
+    ta.focus(); show();
+    // plots above the note load later and push it down
+    document.querySelectorAll('#detail img').forEach(i => { if (!i.complete) i.addEventListener('load', show, { once: true }); });
   }
 
   function confirmAll() {
@@ -487,16 +546,33 @@
   }
 
   // ---------- labels ----------
-  function addLabel(id, raw) {
+  // a label by name, at most 40 characters, spaces collapsed: { d, made }, d the label of that name in any case,
+  // made when it is new (with the next free colour); null for an empty name
+  function createLabel(raw) {
     const name = raw.trim().replace(/\s+/g, ' ').slice(0, 40);
-    if (!id || !name) return;
-    let d = st.labels.find(l => l.name.toLowerCase() === name.toLowerCase());
-    if (!d) {
-      const used = st.labels.map(l => l.c);
-      const c = LCOL.findIndex((_, i) => !used.includes(i));
-      st.labels.push(d = { name, c: c < 0 ? st.labels.length % LCOL.length : c });
-    }
-    const f = fstate(id);
+    if (!name) return null;
+    const d = st.labels.find(l => l.name.toLowerCase() === name.toLowerCase());
+    if (d) return { d, made: false };
+    const used = st.labels.map(l => l.c), c = LCOL.findIndex((_, i) => !used.includes(i));
+    const n = { name, c: c < 0 ? st.labels.length % LCOL.length : c };
+    st.labels.push(n);
+    return { d: n, made: true };
+  }
+
+  // a label made from the Label filter: on no finding, not selected
+  function newLabel(raw) {
+    const r = createLabel(raw);
+    if (!r) return;
+    if (!r.made) return toast('Label exists');
+    ui.newLabel = false;
+    changed(); renderFilters();
+    if (ui.open) renderDetail();
+  }
+
+  function addLabel(id, raw) {
+    const r = id && createLabel(raw);
+    if (!r) return;
+    const d = r.d, f = fstate(id);
     f.labels = f.labels || [];
     if (!f.labels.includes(d.name)) f.labels.push(d.name);
     changed(); renderCards(); renderDetail();
@@ -613,9 +689,10 @@
 
   function openPop(dim) {
     ui.pop = ui.pop === dim ? null : dim;
+    ui.newLabel = false;
     renderFilters();
   }
-  function closePop() { if (ui.pop) { ui.pop = null; renderFilters(); } }
+  function closePop() { if (ui.pop) { ui.pop = null; ui.newLabel = false; renderFilters(); } }
 
   function step(d) {
     const v = visible();
@@ -783,7 +860,10 @@
       const n = base.filter(f => labelsOf(f.id).includes(d.name)).length;
       return `<div class="lr ${ui.labels.has(d.name) ? 'on' : ''} ${n ? '' : 'zero'}"><button class="ld" data-lcol="${esc(d.name)}" style="--lc:${LCOL[d.c % LCOL.length]}" title="Change colour"></button><button class="tr" data-label="${esc(d.name)}"><i></i><span>${esc(d.name)}</span><em>${n}</em></button><button class="x" data-ldel="${esc(d.name)}" title="Delete this label from every finding">✕</button></div>`;
     }).join('');
-    return `<div class="ph"><b>Label</b><span class="grow"></span>${ui.labels.size ? '<button class="lnk" data-act="clearlabels">Clear</button>' : ''}</div><div class="pb tl">${rows || '<p class="muted">No labels yet.</p>'}</div><p class="pn">Add labels in a finding’s details (L). Findings with any of the chosen labels are shown.</p>`;
+    const head = ui.newLabel
+      ? '<input class="lnew" id="newLabel" maxlength="40" placeholder="New label  ↵" autocomplete="off" title="↵ creates the label, Esc cancels">'
+      : `<b>Label</b><span class="grow"></span>${ui.labels.size ? '<button class="lnk" data-act="clearlabels">Clear</button>' : ''}<button class="lnk ladd" data-act="newlabel" title="Create a label">+</button>`;
+    return `<div class="ph">${head}</div><div class="pb tl">${rows || '<p class="muted">No labels yet.</p>'}</div><p class="pn">Create a label with +, or in a finding’s details (L). Findings with any of the chosen labels are shown.</p>`;
   }
 
   const labelChips = (id, rm) => labelsOf(id).map(l => `<span class="lb ${ui.labels.has(l) ? 'on' : ''}" style="--lc:${lcol(l)}"><button data-label="${esc(l)}" title="Filter by label"><i></i>${esc(l)}</button>${rm ? `<button class="lx" data-lrm="${esc(l)}" title="Remove label">✕</button>` : ''}</span>`).join('');
@@ -807,7 +887,17 @@
     return `<div class="ph"><b>Evidence basis</b><span class="grow"></span>${ui.basis.size ? '<button class="lnk" data-act="clearbasis">Clear</button>' : ''}</div><div class="pb tl">${rows}</div><p class="pn">How the triage says each finding is shown. Findings with any of the chosen values are shown.</p>`;
   }
   const basisChips = f => f.bases.map(b => `<button class="eb ${ui.basis.has(b) ? 'on' : ''}" data-basis="${esc(b)}" title="Evidence basis — filter">${esc(b)}</button>`).join('');
-  const statusTag = s => s === 'unsure' || s === 'escalate' ? `<span class="tag st-${s}" title="Status: ${STATUS[s]}">${STATUS[s]}</span>` : '';
+  const statusTag = (s, id) => {
+    const r = s && reasonOf(id), text = r ? `${STATUS[s]}: ${r}` : STATUS[s];
+    return s === 'unsure' || s === 'escalate' || r ? `<span class="tag st-${s}" title="${esc(text)}">${esc(text)}</span>` : '';
+  };
+
+  // the user's notes on the audit as a whole, under the central claim
+  function generalNotes() {
+    const g = st.general || {}, done = g.missed && g.effect;
+    const ask = k => `<div class="gq"><p>${esc(GENERAL[k][0])}</p><div class="gopts">${GENERAL[k][1].map(o => `<button class="${g[k] === o ? 'on' : ''}" data-gn="${k}" data-gv="${esc(o)}">${esc(o)}</button>`).join('')}</div></div>`;
+    return `<details class="claim gnotes" ${ui.notesOpen ? 'open' : ''}><summary>General notes <span class="gs ${done ? 'ok' : ''}">${done ? 'answered' : 'not answered'}</span></summary><div class="gbody">${ask('missed')}${ask('effect')}<textarea data-act="gnote" rows="3" placeholder="Notes on the audit as a whole — exported on the Excel tab ‘General notes’">${esc(g.note || '')}</textarea></div></details>`;
+  }
 
   // the triage's Summary grid, drawn: colour rows by position columns; a cell, a row or a column filters the board
   function axisGrid() {
@@ -826,7 +916,7 @@
     let html = '';
     const claim = C && (C.claim || C.pattern) ? `<details class="claim main" ${ui.claimOpen ? 'open' : ''}><summary>Central claim</summary><div class="md">${MD.render(C.claim)}${C.pattern ? MD.render(C.pattern) : ''}</div></details>` : '';
     const axes = model.twoAxis ? axisGrid() : '';
-    if (axes || claim) html += `<div class="lead">${axes}${claim}</div>`;
+    html += `<div class="lead">${axes}<div class="lead-col">${claim}${generalNotes()}</div></div>`;
     const v = visible();
     let colour = null;
     v.forEach(f => {
@@ -838,7 +928,7 @@
       const nq = st.queries.filter(q => q.finding === f.id).length;
       const brief = f.brief || (f.head ? '' : f.location);
       html += `<article class="card c-${f.colour} ${s ? 'is-' + s : ''} ${ui.sel === f.id ? 'is-sel' : ''}" data-id="${esc(f.id)}">
-        <div class="cm"><label class="chk" title="Confirm (C)"><input type="checkbox" data-act="confirm" ${s === 'confirmed' ? 'checked' : ''}></label><span class="fid">${fname(f)}</span>${posTag(f)}${f.conditional ? '<span class="tag">Conditional</span>' : ''}${f.with.length ? `<span class="tag">with #${f.with.join(', #')}</span>` : ''}${recoloured(f) && !f.custom ? `<span class="tag sev" title="Colour changed from the triage">${CNAME[f.colour0]}→${CNAME[f.colour]}</span>` : ''}${moved(f) ? `<span class="tag sev" title="Position changed from the triage">${f.pos0 ? PDOTS[f.pos0] : '–'}→${f.pos ? PDOTS[f.pos] : '–'}</span>` : ''}${f.custom ? '<span class="tag add" title="Added in the Auditonator; not in the audit">Added</span>' : ''}${statusTag(s)}${(st.findings[f.id] || {}).note ? '<span class="tag note">Note</span>' : ''}<span class="qn" title="Author queries">${nq}&thinsp;Q</span><button class="x" data-act="dismiss" title="Dismiss (X)">✕</button></div>
+        <div class="cm"><label class="chk" title="Confirm (C)"><input type="checkbox" data-act="confirm" ${s === 'confirmed' ? 'checked' : ''}></label><span class="fid">${fname(f)}</span>${posTag(f)}${f.conditional ? '<span class="tag">Conditional</span>' : ''}${f.with.length ? `<span class="tag">with #${f.with.join(', #')}</span>` : ''}${recoloured(f) && !f.custom ? `<span class="tag sev" title="Colour changed from the triage">${CNAME[f.colour0]}→${CNAME[f.colour]}</span>` : ''}${moved(f) ? `<span class="tag sev" title="Position changed from the triage">${f.pos0 ? PDOTS[f.pos0] : '–'}→${f.pos ? PDOTS[f.pos] : '–'}</span>` : ''}${f.custom ? '<span class="tag add" title="Added in the Auditonator; not in the audit">Added</span>' : ''}${statusTag(s, f.id)}${(st.findings[f.id] || {}).note ? '<span class="tag note">Note</span>' : ''}<span class="qn" title="Author queries">${nq}&thinsp;Q</span><button class="x" data-act="dismiss" title="${s === 'dismissed' ? 'Change the reason or reopen (X)' : 'Dismiss (X)'}">✕</button></div>
         <h3>${inline(f.head || f.title)}</h3>
         ${brief ? `<p>${inline(brief)}</p>` : ''}
         <div class="cf-row">${labelChips(f.id)}${typeChips(f)}${basisChips(f)}${cardEnts(f)}</div>
@@ -892,9 +982,9 @@
         <span class="d-xp"></span>
         ${f.custom ? `<button data-act="${ui.edit === f.id ? 'eddone' : 'edit'}" title="Edit this added finding">${ui.edit === f.id ? 'Done' : 'Edit'}</button>` : ''}
         <button class="act-c ${s === 'confirmed' ? 'on' : ''}" data-act="confirm" title="C">${s === 'confirmed' ? '✓ Confirmed' : 'Confirm'}</button>
-        <button class="act-u ${s === 'unsure' ? 'on' : ''}" data-act="unsure" title="Unsure: you cannot decide (U)">Unsure</button>
+        ${reasonBtn(f, 'unsure', 'act-u', 'Unsure', 'Unsure: you cannot decide (U)')}
         <button class="act-e ${s === 'escalate' ? 'on' : ''}" data-act="escalate" title="Escalate: to be passed on for someone else to decide (Shift+E)">Escalate</button>
-        <button class="act-d ${s === 'dismissed' ? 'on' : ''}" data-act="dismiss" title="X">${s === 'dismissed' ? 'Dismissed' : 'Dismiss'}</button>
+        ${reasonBtn(f, 'dismissed', 'act-d', 'Dismiss', 'Dismiss (X)')}
         <span class="nav"><button data-act="prev" ${i <= 0 ? 'disabled' : ''} title="Previous (↑)">↑</button><button data-act="next" ${i < 0 || i >= v.length - 1 ? 'disabled' : ''} title="Next (↓)">↓</button></span>
         <button class="close" data-act="closedetail" title="Close (Esc)">✕</button>
       </div>
@@ -922,7 +1012,13 @@
     el.querySelector('.d-scroll').scrollTop = keep;
   }
 
-  const detailEnts = f => f.ents.map(k => `<button class="ent ${ui.ents.has(k) ? 'on' : ''} ${k.startsWith('x:') ? 'sec' : ''}" data-ent="${k}" title="Filter: ${esc(entLabel(k))}">${esc(k.startsWith('src:') ? 'SD · ' + Facets.label(k.slice(4)) : Facets.label(k))}</button>`).join('');
+  // Unsure and Dismiss open the reason menu; once set, the button names the reason
+  function reasonBtn(f, kind, cls, label, tip) {
+    const on = status(f.id) === kind, r = on && reasonOf(f.id), text = on ? (r ? `${STATUS[kind]}: ${r}` : STATUS[kind]) : label;
+    return `<button class="${cls} rbtn ${on ? 'on' : ''}" data-act="${kind === 'dismissed' ? 'dismiss' : 'unsure'}" title="${on ? `${esc(text)} — change the reason or reopen` : tip}"><span>${esc(text)}</span> ▾</button>`;
+  }
+
+  const detailEnts = f =>f.ents.map(k => `<button class="ent ${ui.ents.has(k) ? 'on' : ''} ${k.startsWith('x:') ? 'sec' : ''}" data-ent="${k}" title="Filter: ${esc(entLabel(k))}">${esc(k.startsWith('src:') ? 'SD · ' + Facets.label(k.slice(4)) : Facets.label(k))}</button>`).join('');
 
   // the form for a finding added in the app; the description is Markdown, like the audit's own findings
   function editor(f) {
@@ -1108,8 +1204,11 @@
     pane.hidden = !ui.pdf;
     if (!ui.pdf) return;
     const p = pdfs[pdfIdx];
-    $('#pdfTabs').innerHTML = pdfs.map((x, i) => `<button class="${i === pdfIdx ? 'on' : ''} ${x.kind === 'sheet' ? 'sh' : ''}" data-pdf="${i}" title="${esc(x.name)}">${esc(x.name.replace(/\.\w+$/, '').replace(/^.*?-(?=[A-Z])/, ''))}</button>`).join('')
-      + '<button data-act="loadpdf" title="Load PDF, Word file or spreadsheet">+</button>';
+    $('#pdfTabs').innerHTML = pdfs.map((x, i) => `<button class="${i === pdfIdx ? 'on' : ''} ${x.kind === 'sheet' ? 'sh' : ''}" data-pdf="${i}" title="${esc(x.name)}">${esc(shortName(x.name))}</button>`).join('');
+    $('#pdfMoreBtns').innerHTML = '<button data-act="loadpdf" title="Load PDF, Word file or spreadsheet">+</button>'
+      + (pdfs.length ? `<button class="lst ${ui.list === 'files' ? 'open' : ''}" data-list="files" title="Open files: switch to one or close it">☰ ${pdfs.length}</button>` : '');
+    fitTabs();
+    if (ui.list === 'files') renderList();
     $('#pdfOffset').value = p ? p.offset || 0 : 0;
     $('#pdfOffsetWrap').hidden = !p || !isText(p);
     $('#docView').hidden = !p || p.kind !== 'docx';
@@ -1128,6 +1227,102 @@
       nf.addEventListener('load', () => setTimeout(() => { if (document.activeElement === nf) nf.blur(); }, 150));
       frame.replaceWith(nf);
     }
+  }
+
+  // a file's tab label: without the MSID, the version suffix and the extension, underscores as spaces
+  function shortName(name) {
+    let s = name.replace(/\.\w+$/, '');
+    const ms = model && model.msid;
+    s = ms && s.startsWith(ms + '-') ? s.slice(ms.length + 1) : s.replace(/^.*?-(?=[A-Z])/, '');
+    return s.replace(/_v\d+$/, '').replace(/_+/g, ' ').trim() || name;
+  }
+
+  // the file tabs on at most two rows; the others hidden, the active one always shown, in place of the last if need be
+  function fitTabs() {
+    const tabs = [...$('#pdfTabs').children];
+    tabs.forEach(b => { b.hidden = false; });
+    if (!tabs.length || !tabs[0].offsetParent) return;
+    const tops = [...new Set(tabs.map(b => b.offsetTop))].sort((a, b) => a - b), limit = tops[Math.min(1, tops.length - 1)];
+    tabs.forEach(b => { if (b.offsetTop > limit) b.hidden = true; });
+    const on = tabs[pdfIdx];
+    if (!on || !on.hidden) return;
+    on.hidden = false;
+    for (let i = pdfIdx - 1; i >= 0 && on.offsetTop > limit; i--) if (!tabs[i].hidden) tabs[i].hidden = true;
+  }
+  fitTabs.width = 0;
+  new ResizeObserver(() => {
+    const w = $('#pdfTabs').clientWidth;
+    if (w && w !== fitTabs.width) { fitTabs.width = w; fitTabs(); }
+    fitSheetTabs();
+  }).observe($('#pdfPane'));
+
+  // ---------- open-file and sheet lists ----------
+  // rows of the list: the open files grouped as documents and spreadsheets in tab order, or the workbook's sheets
+  function listRows() {
+    if (ui.list === 'files') return pdfs.map((p, i) => ({ i, name: p.name, label: shortName(p.name), group: isText(p) ? 'Documents' : 'Spreadsheets', on: i === pdfIdx }));
+    const p = pdfs[pdfIdx];
+    return (p && p.sheets || []).map((s, i) => ({ i, name: s.name, label: s.name, group: '', on: i === Math.min(p.sheet || 0, p.sheets.length - 1) }));
+  }
+  const shownRows = () => { const q = ui.listQ.trim().toLowerCase(); return listRows().filter(r => !q || r.label.toLowerCase().includes(q) || r.name.toLowerCase().includes(q)); };
+
+  function openList(kind) {
+    if (ui.list === kind) return closeList();
+    closeList();
+    ui.list = kind; ui.listQ = '';
+    const rows = listRows();
+    ui.listAt = Math.max(0, rows.findIndex(r => r.on));
+    const el = kind === 'files' ? $('#filesPop') : $('#sheetsPop');
+    el.innerHTML = (rows.length > 8 ? `<div class="ph"><input class="lq" id="listQ" type="search" placeholder="Filter ${rows.length} ${kind === 'files' ? 'files' : 'sheets'}" autocomplete="off"></div>` : '') + '<div class="pb tl"></div><p class="pn">↑ ↓ move · ↵ open · Esc close</p>';
+    el.hidden = false;
+    renderList();
+    (el.querySelector('#listQ') || el).focus();
+    document.querySelectorAll('[data-list]').forEach(b => b.classList.toggle('open', b.dataset.list === kind));
+  }
+  function closeList() {
+    if (!ui.list) return;
+    ui.list = null;
+    $('#filesPop').hidden = $('#sheetsPop').hidden = true;
+    document.querySelectorAll('[data-list]').forEach(b => b.classList.remove('open'));
+  }
+  function renderList() {
+    const el = ui.list === 'files' ? $('#filesPop') : $('#sheetsPop'), rows = shownRows();
+    ui.listAt = Math.max(0, Math.min(ui.listAt, rows.length - 1));
+    let g = null;
+    el.querySelector('.pb').innerHTML = rows.map((r, j) => (r.group && r.group !== g ? `<div class="lg">${(g = r.group)}</div>` : '')
+      + `<div class="lrow ${r.on ? 'cur' : ''} ${j === ui.listAt ? 'at' : ''}" data-li="${r.i}" title="${esc(r.name)}"><span>${esc(r.label)}</span>${r.on ? '<em>shown</em>' : ''}${ui.list === 'files' ? `<button class="x" data-lclose="${r.i}" title="Close this file; Load opens it again">✕</button>` : ''}</div>`).join('')
+      || '<p class="muted">None match.</p>';
+    const at = el.querySelector('.lrow.at'); if (at) at.scrollIntoView({ block: 'nearest' });
+  }
+  function pickList(i) {
+    const kind = ui.list;
+    closeList();
+    if (kind === 'files') pdfIdx = i; else pdfs[pdfIdx].sheet = i;
+    renderPdf();
+  }
+
+  function closeFile(i) {
+    const p = pdfs[i];
+    if (!p) return;
+    freeDoc(p);
+    for (const k of [...sheetCache.keys()]) if (k.startsWith(p.id + ':')) sheetCache.delete(k);
+    if (shownSheet && shownSheet.startsWith(p.id + ':')) shownSheet = null;
+    if (shownDocx === p.id) shownDocx = null;
+    if (hl && hl.key.startsWith(p.id + ':')) hl = null;
+    pdfs.splice(i, 1);
+    if (pdfIdx > i || pdfIdx >= pdfs.length) pdfIdx = Math.max(0, pdfIdx - 1);
+    toast(`Closed ${p.name}`);
+    renderHeader(); renderPdf();
+    if (ui.open) renderDetail();
+    if (!pdfs.length) closeList();
+  }
+
+  // the sheet tabs keep their one row; a list button when they do not fit
+  function fitSheetTabs() {
+    const box = $('#shTabs'), b = $('#shList');
+    const over = box.offsetParent && box.scrollWidth > box.clientWidth + 1;
+    b.hidden = !over;
+    if (over) b.textContent = `☰ ${box.children.length} sheets`;
+    else if (ui.list === 'sheets') closeList();
   }
 
   // ---------- Word files ----------
@@ -1185,6 +1380,9 @@
     if (pdfs[pdfIdx] !== p) return;
     const si = Math.min(p.sheet || 0, book.sheets.length - 1);
     $('#shTabs').innerHTML = book.sheets.map((s, i) => `<button class="${i === si ? 'on' : ''} ${s.hidden ? 'hid' : ''}" data-sheet-i="${i}" title="${esc(s.name)}${s.hidden ? ' (hidden in the workbook)' : ''}">${esc(s.name)}</button>`).join('');
+    fitSheetTabs();
+    const onTab = $('#shTabs .on'); if (onTab) onTab.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (ui.list === 'sheets') renderList();
     if (si < 0) { grid.clear(); return note('No worksheets in this file'); }
     const key = `${p.id}:${si}`;
     if (shownSheet === key) { if (target) applyHl(key, target); return; }
@@ -1297,10 +1495,13 @@
   dirInput.addEventListener('change', () => { loadFiles([], [...dirInput.files].map(f => ({ path: f.webkitRelativePath, get: () => f }))); dirInput.value = ''; });
 
   document.addEventListener('click', e => {
+    const was = ui.reason;
+    if (ui.reason && !e.target.closest('#rmenu')) closeReason();
+    if (ui.list && !e.target.closest('.lpop, [data-list]')) closeList();
     if (e.target.closest('.chk') && e.target.tagName !== 'INPUT') return;
     if (ui.pop && !e.target.closest('.fdrop')) closePop();
     if (e.target.id === 'modal') return closeDetail();
-    const t = e.target.closest('[data-act],[data-cell],[data-pos],[data-colour],[data-status],[data-tab],[data-goto],[data-pdf],[data-sheet-i],[data-jump],[data-pop],[data-ent],[data-type],[data-entmode],[data-label],[data-basis],[data-qoff],[data-lcol],[data-ldel],[data-lrm],[data-edtype],[data-md],a.pg,.card');
+    const t = e.target.closest('[data-act],[data-cell],[data-pos],[data-colour],[data-status],[data-tab],[data-goto],[data-pdf],[data-sheet-i],[data-jump],[data-pop],[data-ent],[data-type],[data-entmode],[data-label],[data-basis],[data-qoff],[data-lcol],[data-ldel],[data-lrm],[data-edtype],[data-md],[data-reason],[data-gn],[data-list],[data-li],[data-lclose],a.pg,.card');
     if (!t) return;
     const act = t.dataset.act;
     const card = t.closest('.card');
@@ -1317,7 +1518,16 @@
     if (act === 'closepdf') { ui.pdf = false; renderHeader(); return renderPdf(); }
     if (!model) return;
     if (t.matches('a.pg')) { e.preventDefault(); return t.dataset.doc ? gotoSheet(t) : gotoPage(t.dataset.role, +t.dataset.page); }
-    if (t.dataset.pdf) { pdfIdx = +t.dataset.pdf; return renderPdf(); }
+    if (t.dataset.pdf) { pdfIdx = +t.dataset.pdf; closeList(); return renderPdf(); }
+    if (t.dataset.lclose) { e.stopPropagation(); return closeFile(+t.dataset.lclose); }
+    if (t.dataset.li) return pickList(+t.dataset.li);
+    if (t.dataset.list) return openList(t.dataset.list);
+    if ('reason' in t.dataset) return pickReason(t.dataset.reason);
+    if (t.dataset.gn) {
+      const g = general(), k = t.dataset.gn;
+      if (g[k] === t.dataset.gv) delete g[k]; else g[k] = t.dataset.gv;
+      changed(); return renderCards();
+    }
     if (t.dataset.sheetI) { pdfs[pdfIdx].sheet = +t.dataset.sheetI; return renderPdf(); }
     if (t.dataset.jump) return grid && grid.jump(...t.dataset.jump.split(',').map(Number));
     if (act === 'exportcells') return exportCells(t.dataset.fid);
@@ -1339,6 +1549,7 @@
     if (t.dataset.ldel) return deleteLabel(t.dataset.ldel);
     if (t.dataset.lrm) return removeLabel(ui.sel, t.dataset.lrm);
     if (act === 'clearlabels') { ui.labels.clear(); renderCards(); return renderDetail(); }
+    if (act === 'newlabel') { ui.newLabel = true; renderFilters(); const i = $('#newLabel'); if (i) i.focus(); return; }
     if (act === 'addfinding') return addFinding();
     if (act === 'edit') { ui.edit = ui.sel; return renderDetail(); }
     if (act === 'eddone') { finishEdit(); return render(); }
@@ -1370,7 +1581,12 @@
       return;
     }
     if (t.dataset.goto) return openDetail(t.dataset.goto);
-    if (act === 'confirm' || act === 'dismiss' || act === 'unsure' || act === 'escalate') { e.stopPropagation(); return setStatus(card ? card.dataset.id : ui.sel, { confirm: 'confirmed', dismiss: 'dismissed' }[act] || act); }
+    if (act === 'dismiss' || act === 'unsure') {
+      e.stopPropagation();
+      const id = card ? card.dataset.id : ui.sel, kind = act === 'dismiss' ? 'dismissed' : 'unsure';
+      return was && was.id === id && was.kind === kind ? null : openReason(id, kind);
+    }
+    if (act === 'confirm' || act === 'escalate') { e.stopPropagation(); return setStatus(card ? card.dataset.id : ui.sel, act === 'confirm' ? 'confirmed' : act); }
     if (act === 'sevreset') return revertRank(ui.sel);
     if (act === 'prev') return step(-1);
     if (act === 'next') return step(1);
@@ -1408,6 +1624,8 @@
     if (t.id === 'shFind') { $('#shFindN').textContent = ''; return; }
     if (t.id === 'dxFind') return clearDocFind();
     if (t.dataset.act === 'note') { fstate(ui.sel).note = t.value; return changed(); }
+    if (t.dataset.act === 'gnote') { general().note = t.value; return changed(); }
+    if (t.id === 'listQ') { ui.listQ = t.value; ui.listAt = 0; return renderList(); }
     if (t.dataset.ed) {
       const u = custom(ui.sel);
       if (!u) return;
@@ -1423,10 +1641,34 @@
     }
   });
 
-  document.addEventListener('toggle', e => { if (e.target.matches('details.claim.main')) ui.claimOpen = e.target.open; else if (e.target.matches('details.axes')) ui.axesOpen = e.target.open; }, true);
+  document.addEventListener('toggle', e => {
+    if (e.target.matches('details.claim.main')) ui.claimOpen = e.target.open;
+    else if (e.target.matches('details.gnotes')) ui.notesOpen = e.target.open;
+    else if (e.target.matches('details.axes')) ui.axesOpen = e.target.open;
+  }, true);
 
   document.addEventListener('keydown', e => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); return save(e.shiftKey); }
+    // the reason menu: a number picks, Esc cancels, any other key closes it and goes on
+    if (ui.reason) {
+      const b = /^[1-9]$/.test(e.key) && $('#rmenu').querySelectorAll('.ro')[+e.key - 1];
+      if (b) { e.preventDefault(); return pickReason(b.dataset.reason); }
+      closeReason();
+      if (e.key === 'Escape') { e.preventDefault(); return; }
+    }
+    if (ui.list && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(e.key)) {
+      e.preventDefault();
+      const rows = shownRows();
+      if (e.key === 'Escape') return closeList();
+      if (e.key === 'Enter') return rows[ui.listAt] ? pickList(rows[ui.listAt].i) : null;
+      ui.listAt = Math.max(0, Math.min(rows.length - 1, ui.listAt + (e.key === 'ArrowDown' ? 1 : -1)));
+      return renderList();
+    }
+    if (e.target.id === 'newLabel' && (e.key === 'Enter' || e.key === 'Escape')) {
+      e.preventDefault();
+      if (e.key === 'Enter') return newLabel(e.target.value);
+      ui.newLabel = false; return renderFilters();
+    }
     if (e.target.id === 'shFind' && e.key === 'Enter') { e.preventDefault(); return findInSheet(e.shiftKey); }
     if (e.target.id === 'dxFind' && e.key === 'Enter') { e.preventDefault(); return findInDoc(e.shiftKey); }
     if (e.target.matches('.lin') && e.key === 'Enter') { e.preventDefault(); return addLabel(ui.sel, e.target.value); }
@@ -1443,8 +1685,8 @@
     if (k === 'arrowdown' || k === 'j') { e.preventDefault(); step(1); }
     else if (k === 'arrowup' || k === 'k') { e.preventDefault(); step(-1); }
     else if (k === 'c' || k === ' ') { e.preventDefault(); if (ui.sel) setStatus(ui.sel, 'confirmed'); }
-    else if (k === 'x') { if (ui.sel) setStatus(ui.sel, 'dismissed'); }
-    else if (k === 'u') { if (ui.sel) setStatus(ui.sel, 'unsure'); }
+    else if (k === 'x') { if (ui.sel) openReason(ui.sel, 'dismissed'); }
+    else if (k === 'u') { if (ui.sel) openReason(ui.sel, 'unsure'); }
     else if (/^[0-4]$/.test(k)) { const f = ui.sel && model.map.get(ui.sel); if (f) k === '0' ? (f.custom ? null : revertRank(f.id)) : setColour(f.id, COLOURS[+k - 1]); }
     else if (k === 'p') { ui.pdf = !ui.pdf; renderHeader(); renderPdf(); }
     else if (k === 'l') { e.preventDefault(); if (ui.sel) { if (!ui.open) openDetail(ui.sel); const i = document.querySelector('#detail .lin'); if (i) i.focus(); } }
@@ -1460,5 +1702,8 @@
   window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); loadDrop(e.dataTransfer); });
   window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 
+  $('#appVer').textContent = APP_VERSION.replace(/\s*\(.*\)$/, '');
+  $('#appVer').title = `Auditonator ${APP_VERSION}`;
+  $('#creditVer').textContent = APP_VERSION;
   render();
 })();

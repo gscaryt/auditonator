@@ -117,7 +117,7 @@ const Grid = (() => {
       return { i: i + 1, n: L.length };
     }
 
-    return { show, clear, highlight, unmark, jump, find, draw, data: () => d, painted: () => paint };
+    return { show, clear, highlight, unmark, jump, find };
   }
 
   return { create };

@@ -122,7 +122,7 @@ const Cells = (() => {
     return { cells, rects: marks, rows, cols, legend };
   }
 
-  return { scan, paint, ref, colIndex, colName, HUE };
+  return { scan, paint, colIndex, HUE };
 })();
 
 if (typeof module !== 'undefined') module.exports = Cells;
