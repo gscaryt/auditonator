@@ -77,7 +77,7 @@
     effect: ['Overall, did DataProof make your work on this manuscript easier or more effective?', ['Yes, substantially', 'Yes, somewhat', 'No meaningful difference', 'It made the work harder but with benefits', 'It made the work harder with no benefits']]
   };
   const general = () => st.general || (st.general = {});
-  const generalGiven = () => { const g = st.general || {}; return !!(g.missed || g.effect || (g.note || '').trim()); };
+  const generalGiven = () => { const g = st.general || {}; return !!(g.missed || g.effect || ['note', 'id', 'ticket'].some(k => (g[k] || '').trim())); };
   const BASES = ['Recomputed', 'Text against text', 'Identical values', 'Statistical pattern', 'Outside fact'];
   // the findings data, used for the board when it belongs to the loaded audit (same run tag), or when no audit file is loaded
   const useData = () => !!src.data && (!src.audit || src.auditName.includes(`-Audit_${src.data.tag}.`));
@@ -440,7 +440,7 @@
       { name: 'Author queries', header: ['No.', 'Author query', 'Finding', 'Related entities', ...RANK_HEAD], rows, widths: [6, 110, 12, 30, 14, 14, 14, 14] },
       { name: 'Internal notes', header: ['Finding', 'Title', ...RANK_HEAD, 'Conditional', 'Finding type', 'Evidence basis', 'Related entities', 'Status', 'Reason', 'User labels', 'User note'], rows: nrows, widths: [9, 50, 14, 14, 14, 14, 11, 22, 40, 30, 11, 24, 22, 80] },
       ...(arows.length ? [{ name: 'Added findings', header: ['Finding', 'Title', 'Colour', 'Position', 'Conditional', 'Finding type', 'Evidence basis', 'Related entities', 'Description', 'Status', 'Reason', 'User labels'], rows: arows, widths: [9, 50, 10, 12, 11, 20, 20, 30, 90, 11, 24, 22] }] : []),
-      { name: 'General notes', header: ['Manuscript', 'Run', 'Auditonator version', GENERAL.missed[0], GENERAL.effect[0], 'Notes'], rows: [[model.msid, runTag().slice(1) || model.run.run || '', APP_VERSION, g.missed || '', g.effect || '', (g.note || '').trim()]], widths: [18, 22, 20, 45, 45, 80] }
+      { name: 'General notes', header: ['ID', 'Ticket', 'Manuscript', 'Run', 'Auditonator version', GENERAL.missed[0], GENERAL.effect[0], 'Notes'], rows: [[(g.id || '').trim(), (g.ticket || '').trim(), model.msid, runTag().slice(1) || model.run.run || '', APP_VERSION, g.missed || '', g.effect || '', (g.note || '').trim()]], widths: [16, 16, 18, 22, 20, 45, 45, 80] }
     ]), `${model.msid || 'audit'}-Author_Queries${runTag()}.xlsx`);
     toast(`Exported ${items.length} quer${items.length === 1 ? 'y' : 'ies'} · ${notes.length} note${notes.length === 1 ? '' : 's'}${added.length ? ` · ${added.length} added finding${added.length === 1 ? '' : 's'}` : ''}${generalGiven() ? ' · general notes' : ''}`);
   }
@@ -895,7 +895,7 @@
   function generalNotes() {
     const g = st.general || {}, done = g.missed && g.effect;
     const ask = k => `<div class="gq"><p>${esc(GENERAL[k][0])}</p><div class="gopts">${GENERAL[k][1].map(o => `<button class="${g[k] === o ? 'on' : ''}" data-gn="${k}" data-gv="${esc(o)}">${esc(o)}</button>`).join('')}</div></div>`;
-    return `<details class="claim gnotes" ${ui.notesOpen ? 'open' : ''}><summary>General notes <span class="gs ${done ? 'ok' : ''}">${done ? 'answered' : 'not answered'}</span></summary><div class="gbody">${ask('missed')}${ask('effect')}<textarea data-act="gnote" rows="3" placeholder="Notes on the audit as a whole — exported on the Excel tab ‘General notes’">${esc(g.note || '')}</textarea></div></details>`;
+    return `<details class="claim gnotes" ${ui.notesOpen ? 'open' : ''}><summary>General notes <span class="gs ${done ? 'ok' : ''}">${done ? 'answered' : 'not answered'}</span></summary><div class="gbody"><div class="gref">${[['id', 'ID'], ['ticket', 'Ticket']].map(([k, l]) => `<label>${l}<input type="text" data-gf="${k}" value="${esc(g[k] || '')}"></label>`).join('')}</div>${ask('missed')}${ask('effect')}<textarea data-act="gnote" rows="3" placeholder="Notes on the audit as a whole — exported on the Excel tab ‘General notes’">${esc(g.note || '')}</textarea></div></details>`;
   }
 
   // the triage's Summary grid, drawn: colour rows by position columns; a cell, a row or a column filters the board
@@ -1642,6 +1642,7 @@
     if (t.id === 'dxFind') return clearDocFind();
     if (t.dataset.act === 'note') { fstate(ui.sel).note = t.value; return changed(); }
     if (t.dataset.act === 'gnote') { general().note = t.value; return changed(); }
+    if (t.dataset.gf) { general()[t.dataset.gf] = t.value; return changed(); }
     if (t.id === 'listQ') { ui.listQ = t.value; ui.listAt = 0; return renderList(); }
     if (t.dataset.ed) {
       const u = custom(ui.sel);
